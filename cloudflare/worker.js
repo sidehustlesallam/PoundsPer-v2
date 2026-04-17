@@ -64,7 +64,7 @@ export default {
         // const addressUrl = `https://api.addressservice.com/postcode/${postcode}?key=${env.ADDRESS_API_KEY}`;
         // const response = await fetch(addressUrl);
         // const data = await response.json();
-        
+
         // MOCK RESPONSE for development:
         const mockAddresses = [
             { fullAddress: "123 Main Street, London, SW1A 0AA", uprn: "1234567890123", lat: 51.5074, lng: -0.1278 },
@@ -152,7 +152,7 @@ export default {
         // 1. Construct a SPARQL query targeting the Land Registry endpoint for the given postcode.
         // 2. Execute the query using a dedicated HTTP client or library.
         // 3. Parse the resulting graph data into a clean array of sale objects.
-        
+
         // MOCK RESPONSE for development:
         const mockSales = [
             { date: "2024-10-01", price: 350000, areaSqft: 1100, areaSqm: 102, pricePerSqft: 318, pricePerSqm: 3430 },
@@ -187,7 +187,7 @@ export default {
         // --- IMPLEMENTATION REQUIRED ---
         // 1. Construct a SPARQL query targeting the Land Registry endpoint for HPI data.
         // 2. Execute the query and parse the resulting graph data.
-        
+
         // MOCK RESPONSE for development:
         const mockHpiData = {
             hpiIndex: 1.05,
@@ -225,7 +225,7 @@ export default {
         // --- IMPLEMENTATION REQUIRED ---
         // 1. Construct an Overpass API query to search for educational POIs within a radius.
         // 2. Execute the query and parse the resulting GeoJSON/XML.
-        
+
         // MOCK RESPONSE for development:
         const mockSchools = [
             { name: "St. Jude's Primary School", rating: "Good", distanceKm: 0.5 },
@@ -261,7 +261,7 @@ export default {
         // --- IMPLEMENTATION REQUIRED ---
         // 1. Lookup the UPRN against the static dataset (Water Provider).
         // 2. This should ideally be a simple in-memory map lookup or a database query.
-        
+
         // MOCK RESPONSE for development:
         const mockProvider = "Thames Water";
 
@@ -295,7 +295,7 @@ export default {
         // --- IMPLEMENTATION REQUIRED ---
         // 1. Construct an Overpass API query to find transport POIs (stations, stops).
         // 2. Execute the query and parse the resulting GeoJSON/XML.
-        
+
         // MOCK RESPONSE for development:
         const mockStations = [
             { name: "Victoria Station", type: "Rail", distanceKm: 1.1, travelTimeMin: 15 },

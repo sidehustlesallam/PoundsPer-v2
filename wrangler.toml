@@ -1,0 +1,19 @@
+name = "per-api"
+main = "cloudflare/worker.js"
+compatibility_date = "2026-04-17"
+compatibility_flags = ["durable_queue", "kv_namespaces"]
+
+[vars]
+# These variables should be set in the Cloudflare Dashboard/CLI, 
+# but defining them here helps document the expected structure.
+# They are placeholders and must be replaced with actual values or left blank if only using the dashboard.
+EPC_BASE_URL = ""
+EPC_API_KEY = ""
+BROADBAND_BASE_URL = ""
+BROADBAND_API_KEY = ""
+FLOOD_BASE_URL = ""
+FLOOD_API_KEY = ""
+
+[env.production]
+# Optional: Define environment-specific variables if needed
+# For this project, we assume all keys are managed globally or in the production environment.
