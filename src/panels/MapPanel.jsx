@@ -1,47 +1,51 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Panel from '../components/Panel';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-/**
- * Map Panel Component
- * Displays an interactive map of the property location.
- * Note: This component assumes Leaflet is available in the environment.
- * @param {object} props - Component props.
- * @param {string} props.title - Title of the panel.
- * @param {function} props.fetchData - Async function to fetch data (optional, for coordinates).
- * @param {string} props.params - JSON string of parameters (e.g., lat, lng).
- */
-const MapPanel = ({ title, fetchData, params }) => {
+const MapPanel = ({ address }) => {
     const [map, setMap] = useState(null);
-    const [center, setCenter] = useState([0, 0]);
-    const [zoom, setZoom] = useState(13);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
-        if (params) {
-            try {
-                const coords = JSON.parse(params);
-                const lat = parseFloat(coords.lat);
-                const lng = parseFloat(coords.lng);
-
-                if (!isNaN(lat) && !isNaN(lng)) {
-                    setCenter([lat, lng]);
-                    setZoom(15);
-                }
-            } catch (e) {
-                console.error("Invalid coordinates provided for map:", e);
-            }
+        if (!address || !address.lat || !address.lng) {
+            setLoading(false);
+            setError("Cannot display map: Latitude and Longitude are required for the selected address.");
+            return;
         }
-    }, [params]);
 
-    // This panel is primarily visual and relies on coordinates passed via params.
-    // We keep the Panel wrapper structure but handle map initialization manually.
+        // Initialize map only once
+        if (!map) {
+            const initialMap = L.map('map-container').setView([address.lat, address.lng], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(initialMap);
+            setMap(initialMap);
+        } else {
+            // If map exists, just move/zoom to the new coordinates
+            map.setView([address.lat, address.lng], 15);
+        }
+
+        // Add marker to the current location
+        L.marker([address.lat, address.lng]).addTo(map)
+            .bindPopup("<b>Location Found</b><br>Address: " + address.fullAddress)
+            .openPopup();
+
+        setLoading(false);
+    }, [address]);
+
     return (
-        <div className="data-panel card map-container">
-            <h3 className="panel-title">{title}</h3>
-            <div id="map" style={{ height: '400px', width: '100%' }} className="map-placeholder"></div>
-            <p className="map-info">Map visualization requires Leaflet.js library setup.</p>
-        </div>
+        <Panel title="Location Map">
+            <div id="map-container" style={{ height: '400px', width: '100%' }}>
+                {/* Leaflet map will be rendered here */}
+            </div>
+            {loading && <p>Loading map...</p>}
+            {error && <div className="error-message">{error}</div>}
+            {!loading && !error && (
+                <p className="map-note">Map centered on the selected address.</p>
+            )}
+        </Panel>
     );
 };
 

@@ -20,13 +20,14 @@ const Dashboard = () => {
         setLoading(true);
         setError(null);
         try {
-            // Assuming the Worker is deployed and accessible via a base URL
+            // NOTE: Replace 'http://localhost:8787' with the actual deployed Worker URL.
             const response = await axios.get(`http://localhost:8787/api/addresses?postcode=${postcode}`);
             
             if (response.data.addresses && response.data.addresses.length > 0) {
                 setAddresses(response.data.addresses);
-                // Select the first address by default
-                setSelectedAddress(response.data.addresses[0]);
+                // Attempt to maintain selection continuity
+                const initialSelection = response.data.addresses.find(addr => addr.uprn === selectedAddress?.uprn);
+                setSelectedAddress(initialSelection || response.data.addresses[0]);
             } else {
                 setAddresses([]);
                 setSelectedAddress(null);
@@ -34,18 +35,18 @@ const Dashboard = () => {
             }
         } catch (err) {
             console.error("Error fetching addresses:", err);
-            setError("Failed to connect to the backend API. Please check the Worker deployment.");
+            setError("Failed to connect to the backend API. Please check the Worker deployment or network connection.");
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [selectedAddress]); // Dependency on selectedAddress to check for continuity
 
     // Handle postcode change and trigger fetch
     const handlePostcodeChange = (e) => {
         const newPostcode = e.target.value;
         setPostcode(newPostcode);
-        // Debounce or call fetchAddresses after a short delay for better UX
-        // For now, we call it directly for simplicity.
+        // Clear previous selection when postcode changes
+        setSelectedAddress(null);
         fetchAddresses(newPostcode);
     };
 
@@ -73,7 +74,9 @@ const Dashboard = () => {
                 {!loading && addresses.length > 0 && (
                     <ul className="address-list">
                         {addresses.map((addr, index) => (
-                            <li key={index} onClick={() => setSelectedAddress(addr)} className="address-item">
+                            <li key={index} onClick={() => {
+                                setSelectedAddress(addr);
+                            }} className="address-item">
                                 {addr.fullAddress}
                             </li>
                         ))}
@@ -82,13 +85,13 @@ const Dashboard = () => {
                 {!loading && addresses.length === 0 && !error && (
                     <p>No addresses found or please enter a valid postcode.</p>
                 )}
-            </div>
+            </div >
 
             {/* Main Dashboard Layout */}
             {selectedAddress && (
                 <DashboardLayout address={selectedAddress} />
             )}
-        </div>
+        </div >
     );
 };
 
