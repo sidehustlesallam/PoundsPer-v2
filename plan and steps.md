@@ -1,13 +1,13 @@
 ## £Per Deployment Plan and Steps
 
 This document outlines the comprehensive, step-by-step process required to deploy the £Per High-Precision UK Property Due-Diligence Engine. This plan assumes the repository structure is initialized and all necessary API keys are available.
+Any files created will only be available on GitHub repository. Cloudflare environment is separate and inaccessible. User will copy and paste code from worker.js to cloudflare seperately. 
+
 
 ### 🛠️ Phase 0: Prerequisites and Setup
 
 1.  **Install Dependencies:**
-    *   Ensure Node.js and npm are installed.
-    *   Install the Cloudflare CLI: `npm install -g wrangler`
-    *   Initialize the project dependencies (e.g., `npm install` in the root directory).
+
 2.  **API Key Acquisition:**
     *   Acquire the necessary API keys:
         *   EPC API Key
