@@ -10,7 +10,7 @@ This document catalogs all external and internal data sources utilized by the £
 *   **Key Inputs:** UPRN (Unique Property Reference Number).
 *   **Key Outputs:** Latest EPC rating (A-G), Potential EPC rating, Floor area (sqft/sqm).
 *   **Authentication:** Requires `EPC_API_KEY` and `EPC_BASE_URL` environment variables.
-*   **Considerations:** The API must be called server-side (Worker) to protect the API key.
+*   **Considerations:** The API must be called server-side (Worker) to protect the API key. The Worker must handle rate limiting and API version changes.
 
 ### 2. Broadband API (Ofcom/ThinkBroadband)
 *   **Purpose:** Predicts available broadband speeds at a given location.
@@ -18,7 +18,7 @@ This document catalogs all external and internal data sources utilized by the £
 *   **Key Inputs:** Location coordinates (Lat/Lng) or UPRN.
 *   **Key Outputs:** Predicted download and upload speeds.
 *   **Authentication:** Requires `BROADBAND_API_KEY` and `BROADBAND_BASE_URL` environment variables.
-*   **Considerations:** Must be called server-side (Worker).
+*   **Considerations:** Must be called server-side (Worker). The API response structure must be robustly parsed.
 
 ### 3. Environment Agency API (Flood Risk)
 *   **Purpose:** Determines the flood risk rating for a property.
@@ -26,7 +26,7 @@ This document catalogs all external and internal data sources utilized by the £
 *   **Key Inputs:** Location coordinates (Lat/Lng).
 *   **Key Outputs:** Flood risk rating (e.g., Low, Medium, High).
 *   **Authentication:** Requires `FLOOD_API_KEY` and `FLOOD_BASE_URL` environment variables.
-*   **Considerations:** Must be called server-side (Worker).
+*   **Considerations:** Must be called server-side (Worker). The API response must be validated against expected risk categories.
 
 ## 📊 Open Data Sources (No API Key Required)
 
@@ -36,7 +36,7 @@ This document catalogs all external and internal data sources utilized by the £
 *   **Key Inputs:** Postcode, Locality.
 *   **Key Outputs:** Sale price, floor area, calculated £/sqft, £/sqm, and HPI-adjusted price.
 *   **Authentication:** None (Uses public SPARQL endpoints).
-*   **Considerations:** Queries must be robust against changes in the underlying SPARQL endpoint structure.
+*   **Considerations:** Queries must be robust against changes in the underlying SPARQL endpoint structure. The Worker must handle complex graph traversal and data normalization.
 
 ### 5. Overpass API (Schools & Transport)
 *   **Purpose:** Retrieves geographical data for points of interest (POIs).
@@ -44,7 +44,7 @@ This document catalogs all external and internal data sources utilized by the £
 *   **Key Inputs:** Location coordinates (Lat/Lng) and search radius.
 *   **Key Outputs:** List of nearby schools, nearest rail/tube stations.
 *   **Authentication:** None.
-*   **Considerations:** Rate limiting and query complexity must be managed within the Worker.
+*   **Considerations:** Rate limiting and query complexity must be managed within the Worker. The frontend should handle the display of GeoJSON data.
 
 ## 📄 Static & Scraping Sources
 
@@ -54,7 +54,7 @@ This document catalogs all external and internal data sources utilized by the £
 *   **Key Inputs:** School name or location.
 *   **Key Outputs:** Ofsted rating and inspection date.
 *   **Authentication:** None.
-*   **Considerations:** **Highly brittle.** Relies on HTML scraping, meaning any change to the target website's structure will break this module.
+*   **Considerations:** **Highly brittle.** Relies on HTML scraping, meaning any change to the target website's structure will break this module. This requires manual maintenance.
 
 ### 7. Water Provider Data
 *   **Purpose:** Identifies the water utility provider for a property.
@@ -62,18 +62,4 @@ This document catalogs all external and internal data sources utilized by the £
 *   **Key Inputs:** UPRN or Postcode.
 *   **Key Outputs:** Name of the water provider.
 *   **Authentication:** None.
-*   **Considerations:** Requires periodic manual updates to the static dataset.
-
-## Summary Table
-
-| Module | Data Source | Type | API Key Required? | Notes |
-| :--- | :--- | :--- | :--- | :--- |
-| EPC | EPC API | External API | Yes | Critical, requires secure handling. |
-| Broadband | Ofcom/ThinkBroadband | External API | Yes | Critical, requires secure handling. |
-| Flood Risk | Environment Agency API | External API | Yes | Critical, requires secure handling. |
-| Recent Sales | Land Registry SPARQL | Open Data | No | Stable, but query structure is key. |
-| HPI | Land Registry SPARQL | Open Data | No | Stable, but query structure is key. |
-| Schools | Overpass API | Open Data | No | Reliable for POI data. |
-| Transport | Overpass API | Open Data | No | Reliable for POI data. |
-| Ofsted | HTML Scraping | Scraping | No | Most fragile module; requires careful maintenance. |
-| Water Provider | Static Dataset | Static | No | Requires manual data upkeep. |
+*   **Considerations:** Requires periodic manual updates to the static dataset. This data should be stored in a local JSON file or database accessible by the Worker.

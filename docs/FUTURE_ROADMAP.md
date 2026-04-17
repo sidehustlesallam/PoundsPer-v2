@@ -3,7 +3,7 @@
 This document outlines planned enhancements and future features for the £Per due-diligence engine. These modules are designed to expand the platform's utility and market reach.
 
 ## 👤 User Accounts and Personalization
-*   **Saved Properties:** Allow users to save properties of interest, including all collected data points, for later review.
+*   **Saved Properties:** Allow users to save properties of interest, including all collected data points, for later review. This requires a user authentication system and a persistent storage mechanism (e.g., Cloudflare D1 or KV).
 *   **Notes/Annotations:** Implement a rich text editor allowing users to add private notes and annotations to specific properties or data panels.
 *   **Alerts:** Set up automated alerts (e.g., via email or in-app notification) when a property in a saved portfolio meets specific criteria (e.g., price drops below a threshold, or a new sale occurs in the area).
 
