@@ -1,6 +1,8 @@
 This README is designed so that **an agentic AI can build the entire repo from scratch** with zero ambiguity.  
 It’s also clean, human‑readable, and professional.
 
+**Continuing in a new session:** read [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for deployment, secrets, file map, and what is still placeholder.
+
 ---
 
 # 📘 **£Per — Property Intelligence Engine**  
@@ -81,8 +83,9 @@ All endpoints are GET requests.
 ```
 /epc/search?postcode=NW90AA
 /epc/search?uprn=123456789
-/epc/certificate?rrn=1234-5678-1234-5678
+/epc/certificate?rrn=<lmk-key>
 ```
+(`rrn` query param carries the EPC **lmk-key** used by the upstream certificate route.)
 
 ## **3. PPI (Recent Sales)**
 ```
@@ -243,7 +246,7 @@ The orchestrator:
 
 # 🛠 **Development Setup**
 
-No build tools required.
+No build tools required for the frontend.
 
 ### **1. Clone repo**
 ```
@@ -251,14 +254,13 @@ git clone <repo>
 ```
 
 ### **2. Open index.html**
-Works directly in browser.
+Works directly in browser (or use a simple static server if needed for ES modules).
 
 ### **3. Deploy Worker**
-Use Cloudflare dashboard or Wrangler.
+Deploy `worker/src/index.js` via the **Cloudflare Dashboard** (no Wrangler config in this repo).
 
-### **4. Set environment variables**
-- `EPC_TOKEN`  
-- Any broadband API keys  
+### **4. Set Worker secrets**
+- **`EPC_EMAIL`** and **`EPC_API_KEY`** (recommended for EPC Open Data Communities Basic auth), or a single precomputed Base64 secret — see [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ---
 
