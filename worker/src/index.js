@@ -1,7 +1,9 @@
 /**
  * £Per API — Cloudflare Worker (plain JavaScript, no build step).
- * Deploy manually via the Cloudflare Dashboard; bind a secret named EPC_TOKEN for EPC upstream calls.
- * Implements the strict API contract; CORS enabled; EPC_TOKEN never exposed to clients.
+ * Deploy via Cloudflare Dashboard. EPC Open Data Communities auth (never commit secrets):
+ *   - EPC_AUTH_B64 = Base64(email:apikey) exactly as used after "Basic " in official EPC docs, OR
+ *   - EPC_EMAIL + EPC_API_KEY = composed as Basic base64(email:apikey) in this worker.
+ * Implements the strict API contract; CORS enabled; credentials never exposed to clients.
  */
 
 const POSTCODES_BASE = "https://api.postcodes.io";
@@ -58,16 +60,30 @@ function looksLikePostcode(s) {
   return /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(String(s).trim());
 }
 
-async function epcAuthHeaders(env) {
-  const token = env.EPC_TOKEN;
-  if (!token) {
-    return null;
+/**
+ * EPC requires HTTP Basic: Authorization: Basic <Base64("email:apikey")>
+ * (not api-key-only; see https://epc.opendatacommunities.org/docs/api/authentication )
+ */
+function epcAuthHeaders(env) {
+  const precomputed =
+    env.EPC_AUTH_B64 || env.EPC_BASIC_B64 || env.EPC_TOKEN;
+  if (precomputed && String(precomputed).trim()) {
+    const token = String(precomputed).trim();
+    return {
+      Authorization: `Basic ${token}`,
+      Accept: "application/json",
+    };
   }
-  const b64 = btoa(`${token}:`);
-  return {
-    Authorization: `Basic ${b64}`,
-    Accept: "application/json",
-  };
+  const email = env.EPC_EMAIL;
+  const apiKey = env.EPC_API_KEY;
+  if (email && apiKey) {
+    const raw = `${String(email)}:${String(apiKey)}`;
+    return {
+      Authorization: `Basic ${btoa(raw)}`,
+      Accept: "application/json",
+    };
+  }
+  return null;
 }
 
 export default {
@@ -87,7 +103,7 @@ export default {
 
     try {
       if (path === "/resolve") {
-        return handleResolve(url, origin);
+        return handleResolve(url, env, origin);
       }
       if (path === "/geo") {
         return handleGeo(url, origin);
@@ -130,7 +146,31 @@ export default {
   },
 };
 
-async function handleResolve(url, origin) {
+async function lookupPostcodeGeo(pcFormatted) {
+  const { res, body } = await fetchJson(
+    `${POSTCODES_BASE}/postcodes/${encodeURIComponent(pcFormatted)}`
+  );
+  if (!res.ok || body.status === 404 || body.error) {
+    return { ok: false, body };
+  }
+  const r = body.result || body;
+  return {
+    ok: true,
+    postcode: r.postcode || pcFormatted,
+    lat: r.latitude,
+    lon: r.longitude,
+    localAuthority: r.codes?.admin_district || r.admin_district || "",
+    region: r.region || "",
+    country: r.country || "",
+    parliamentary_constituency: r.parliamentary_constituency || "",
+  };
+}
+
+/**
+ * Resolve: prefer many EPC domestic certificates for the postcode (dropdown per property);
+ * fall back to a single postcodes.io centroid row if EPC is unavailable or returns nothing.
+ */
+async function handleResolve(url, env, origin) {
   const input = url.searchParams.get("input") || "";
   const trimmed = input.trim();
   if (!trimmed) {
@@ -153,41 +193,95 @@ async function handleResolve(url, origin) {
     pc = formatPostcode(normalizePostcode(trimmed));
   }
 
-  const { res, body } = await fetchJson(
-    `${POSTCODES_BASE}/postcodes/${encodeURIComponent(pc)}`
+  const geo = await lookupPostcodeGeo(pc);
+  if (!geo.ok) {
+    return json(
+      { results: [], query: trimmed, notFound: true },
+      200,
+      origin
+    );
+  }
+
+  const pcNorm = normalizePostcode(geo.postcode || pc);
+  const pcDisp = formatPostcode(pcNorm);
+  const headers = epcAuthHeaders(env);
+  const results = [];
+
+  if (headers) {
+    const epcSearchUrl = `${EPC_BASE}/domestic/search?${new URLSearchParams({
+      postcode: pcDisp,
+      size: "500",
+    }).toString()}`;
+    const { res, body } = await fetchJson(epcSearchUrl, { headers });
+    if (res.ok && body && Array.isArray(body.rows) && body.rows.length) {
+      const seen = new Set();
+      for (const row of body.rows) {
+        const lmk = row["lmk-key"] || row.lmkKey || "";
+        if (!lmk || seen.has(lmk)) continue;
+        seen.add(lmk);
+        const a1 =
+          row.address1 ||
+          row["address-line-1"] ||
+          row["address_line_1"] ||
+          "";
+        const a2 = row.address2 || row["address-line-2"] || row["address_line_2"] || "";
+        const a3 = row.address3 || row["address-line-3"] || row["address_line_3"] || "";
+        const parts = [a1, a2, a3].filter((x) => x && String(x).trim());
+        const line = parts.join(", ");
+        const rowPc = formatPostcode(
+          normalizePostcode(row.postcode || pcDisp)
+        );
+        const label = line
+          ? `${line} — ${rowPc}`
+          : `${rowPc} — EPC ${lmk.slice(0, 8)}…`;
+        results.push({
+          id: `epc:${lmk}`,
+          label,
+          postcode: rowPc,
+          postcodeNormalized: normalizePostcode(rowPc),
+          lat: geo.lat,
+          lon: geo.lon,
+          localAuthority:
+            row["local-authority"] || geo.localAuthority || "",
+          region: geo.region || "",
+          country: geo.country || "",
+          parliamentary_constituency: geo.parliamentary_constituency || "",
+          uprn: row.uprn != null ? String(row.uprn) : "",
+          lmkKey: lmk,
+        });
+      }
+    }
+  }
+
+  if (results.length === 0) {
+    results.push({
+      id: `pc:${pcNorm}`,
+      label: `${pcDisp} — ${geo.localAuthority || "UK"}`,
+      postcode: pcDisp,
+      postcodeNormalized: pcNorm,
+      lat: geo.lat,
+      lon: geo.lon,
+      localAuthority: geo.localAuthority || "",
+      region: geo.region || "",
+      country: geo.country || "",
+      parliamentary_constituency: geo.parliamentary_constituency || "",
+      uprn: "",
+      lmkKey: "",
+    });
+  }
+
+  return json(
+    {
+      results,
+      query: trimmed,
+      source:
+        results.length > 1 || (results[0] && results[0].id.startsWith("epc:"))
+          ? "epc+postcodes"
+          : "postcodes",
+    },
+    200,
+    origin
   );
-
-  if (!res.ok || body.status === 404) {
-    return json({ results: [], query: trimmed, notFound: true }, 200, origin);
-  }
-
-  if (body.error) {
-    return json({ results: [], query: trimmed, error: body.error }, 200, origin);
-  }
-
-  const r = body.result || body;
-  const postcode = r.postcode || pc;
-  const id = `pc:${normalizePostcode(postcode)}`;
-  const lat = r.latitude;
-  const lon = r.longitude;
-  const la = r.codes?.admin_district || r.admin_district || "";
-
-  return json({
-    results: [
-      {
-        id,
-        label: `${postcode} — ${r.admin_district || "UK"}`,
-        postcode: formatPostcode(postcode),
-        postcodeNormalized: normalizePostcode(postcode),
-        lat,
-        lon,
-        localAuthority: la,
-        region: r.region || "",
-        country: r.country || "",
-        parliamentary_constituency: r.parliamentary_constituency || "",
-      },
-    ],
-  }, 200, origin);
 }
 
 async function handleGeo(url, origin) {
@@ -234,7 +328,7 @@ async function handleAddress(url, env, origin) {
           postcode: "",
           source: "epc_unconfigured",
         },
-        warning: "EPC_TOKEN not set — address enrichment limited",
+        warning: "EPC auth not set — address enrichment limited",
       },
       200,
       origin
@@ -273,7 +367,7 @@ async function handleEpcSearch(url, env, origin) {
   const headers = await epcAuthHeaders(env);
   if (!headers) {
     return json(
-      { rows: [], message: "EPC_TOKEN not configured on worker" },
+      { rows: [], message: "EPC auth not configured on worker" },
       200,
       origin
     );
@@ -283,7 +377,11 @@ async function handleEpcSearch(url, env, origin) {
   const uprn = url.searchParams.get("uprn");
   let target = "";
   if (postcode) {
-    target = `${EPC_BASE}/domestic/search?postcode=${encodeURIComponent(formatPostcode(normalizePostcode(postcode)))}`;
+    const q = new URLSearchParams({
+      postcode: formatPostcode(normalizePostcode(postcode)),
+      size: "500",
+    });
+    target = `${EPC_BASE}/domestic/search?${q.toString()}`;
   } else if (uprn) {
     target = `${EPC_BASE}/domestic/search?uprn=${encodeURIComponent(uprn)}`;
   } else {
@@ -300,7 +398,7 @@ async function handleEpcSearch(url, env, origin) {
 async function handleEpcCertificate(url, env, origin) {
   const headers = await epcAuthHeaders(env);
   if (!headers) {
-    return json({ certificate: null, message: "EPC_TOKEN not configured" }, 200, origin);
+    return json({ certificate: null, message: "EPC auth not configured" }, 200, origin);
   }
 
   const rrn = url.searchParams.get("rrn") || "";

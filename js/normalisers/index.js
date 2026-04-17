@@ -25,6 +25,8 @@ export function normaliseResolveResponse(raw) {
         region: safeStr(x.region ?? ""),
         country: safeStr(x.country ?? ""),
         parliamentary_constituency: safeStr(x.parliamentary_constituency ?? ""),
+        uprn: safeStr(x.uprn ?? ""),
+        lmkKey: safeStr(x.lmkKey ?? ""),
       };
     }),
     query: safeStr(o.query ?? ""),

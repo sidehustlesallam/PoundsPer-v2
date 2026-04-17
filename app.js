@@ -40,6 +40,12 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function safeSelString(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v).trim();
+  return s;
+}
+
 function populateAddressSelect(results) {
   const sel = $("address-select");
   if (!sel) return;
@@ -154,14 +160,19 @@ async function loadDatasetForSelection(sel) {
     setError("market", e.message);
   }
 
-  // Secondary fetches: EPC certificate + address
-  const firstLmk = state.normalised.epcSearch?.rows?.[0]?.lmkKey || "";
+  // Secondary fetches: EPC certificate + address (prefer row chosen in /resolve)
+  const lmkForCert =
+    safeSelString(sel.lmkKey) ||
+    state.normalised.epcSearch?.rows?.[0]?.lmkKey ||
+    "";
   const uprn =
-    state.normalised.epcSearch?.rows?.[0]?.uprn || sel.uprn || "";
+    safeSelString(sel.uprn) ||
+    state.normalised.epcSearch?.rows?.[0]?.uprn ||
+    "";
 
   try {
-    if (firstLmk) {
-      const certRaw = await getEpcCertificate(firstLmk);
+    if (lmkForCert) {
+      const certRaw = await getEpcCertificate(lmkForCert);
       state.raw.epcCertificate = certRaw;
       state.normalised.epcCertificate =
         normaliseEpcCertificateResponse(certRaw);
