@@ -83,7 +83,7 @@ export default {
 
     /**
      * GET /api/epc?uprn=
-     * Fetches EPC data for a given UPRN.
+     * Fetches EPC data for a given UPRN using the Open Data Commons API.
      */
     async handleEPC(request, env) {
         const { searchParams } = new URL(request.url);
@@ -96,25 +96,67 @@ export default {
             });
         }
 
-        try {
-            // Use environment variables for secure API calls
-            const url = `${env.EPC_BASE_URL}/?uprn=${uprn}&api_key=${env.EPC_API_KEY}`;
-            const response = await fetch(url);
-            const data = await response.json();
+        // --- API Configuration ---
+        const API_URL = 'https://epc.opendatacommunities.org/api/v1/domestic/search';
+        // Use the environment variable for the Base64-encoded authentication token
+        const AUTH_TOKEN = env.EPC_AUTH_TOKEN; 
 
-            // MOCK RESPONSE for development:
-            const mockData = {
-                rating: "B",
-                potentialRating: "C",
-                floorAreaSqft: 1200,
-                floorAreaSqm: 111.5,
-                lastUpdated: new Date().toISOString()
-            };
+        if (!AUTH_TOKEN) {
+            return new Response(JSON.stringify({ error: "EPC authentication token (EPC_AUTH_TOKEN) is missing from environment variables." }), {
+                headers: { "Content-Type": "application/json" },
+                status: 500
+            });
+        }
+
+        // Construct query parameters: search for the UPRN and limit to 1 result
+        const queryParams = new URLSearchParams({
+            'size': '1',
+            'search-after': '' // Start from the beginning
+        });
+        // Assuming UPRN can be used as a filter parameter (this might need adjustment based on API documentation)
+        queryParams.append('uprn', uprn); 
+
+        const fullUrl = `${API_URL}?${queryParams.toString()}`;
+
+        try {
+            const response = await fetch(fullUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'text/csv',
+                    'Authorization': AUTH_TOKEN
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`API request failed with status: ${response.status} ${response.statusText}`);
+            }
+
+            const csvText = await response.text();
+            const lines = csvText.trim().split('\n');
+
+            if (lines.length < 2) {
+                return new Response(JSON.stringify({ success: false, error: "No data found or invalid response format." }), {
+                    headers: { "Content-Type": "application/json" },
+                    status: 404
+                });
+            }
+
+            // The first line is the header, the second line is the data (since size=1)
+            const headers = lines[0].split(',');
+            const dataValues = lines[1].split(',');
+
+            // Simple object mapping for the single result
+            const result = {};
+            headers.forEach((header, index) => {
+                // Clean up header names for JSON keys
+                const key = header.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+                result[key] = dataValues[index] ? dataValues[index].trim() : null;
+            });
 
             return new Response(JSON.stringify({ 
                 success: true, 
-                data: mockData, 
-                source: "EPC API"
+                data: result, 
+                source: "Open Data Commons EPC API"
             }), {
                 headers: { "Content-Type": "application/json" },
                 status: 200
@@ -124,7 +166,7 @@ export default {
             console.error("EPC API Error:", e);
             return new Response(JSON.stringify({ 
                 success: false, 
-                error: "Failed to fetch EPC data. Check API keys and network connectivity.",
+                error: "Failed to fetch EPC data. Check UPRN, API endpoint, and network connectivity.",
                 details: e.message
             }), {
                 headers: { "Content-Type": "application/json" },
