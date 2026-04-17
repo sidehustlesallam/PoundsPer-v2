@@ -1,8 +1,8 @@
 /**
  * £Per API — Cloudflare Worker (plain JavaScript, no build step).
  * Deploy via Cloudflare Dashboard. EPC Open Data Communities auth (never commit secrets):
- *   - EPC_AUTH_B64 = Base64(email:apikey) exactly as used after "Basic " in official EPC docs, OR
- *   - EPC_EMAIL + EPC_API_KEY = composed as Basic base64(email:apikey) in this worker.
+ *   Recommended — set two secrets: EPC_EMAIL and EPC_API_KEY (HTTP Basic = base64(email:apikey)).
+ *   Fallback — EPC_AUTH_B64, EPC_BASIC_B64, or EPC_TOKEN = precomputed Base64 only (after "Basic ").
  * Implements the strict API contract; CORS enabled; credentials never exposed to clients.
  */
 
@@ -62,24 +62,24 @@ function looksLikePostcode(s) {
 
 /**
  * EPC requires HTTP Basic: Authorization: Basic <Base64("email:apikey")>
- * (not api-key-only; see https://epc.opendatacommunities.org/docs/api/authentication )
+ * Prefer EPC_EMAIL + EPC_API_KEY (easier key rotation). Precomputed Base64 is fallback only.
  */
 function epcAuthHeaders(env) {
+  const email = env.EPC_EMAIL;
+  const apiKey = env.EPC_API_KEY;
+  if (email && apiKey) {
+    const raw = `${String(email).trim()}:${String(apiKey).trim()}`;
+    return {
+      Authorization: `Basic ${btoa(raw)}`,
+      Accept: "application/json",
+    };
+  }
   const precomputed =
     env.EPC_AUTH_B64 || env.EPC_BASIC_B64 || env.EPC_TOKEN;
   if (precomputed && String(precomputed).trim()) {
     const token = String(precomputed).trim();
     return {
       Authorization: `Basic ${token}`,
-      Accept: "application/json",
-    };
-  }
-  const email = env.EPC_EMAIL;
-  const apiKey = env.EPC_API_KEY;
-  if (email && apiKey) {
-    const raw = `${String(email)}:${String(apiKey)}`;
-    return {
-      Authorization: `Basic ${btoa(raw)}`,
       Accept: "application/json",
     };
   }
