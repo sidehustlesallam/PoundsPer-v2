@@ -23,19 +23,38 @@ export function renderPanelIdentity(state) {
   const cert = state.normalised?.epcCertificate || {};
   const addr = state.normalised?.address || {};
   const search = state.normalised?.epcSearch || {};
-  const first = search.rows?.[0];
+  const selLmk = state.selection?.lmkKey || "";
+  const searchRows = search.rows || [];
+  const matched =
+    (selLmk &&
+      searchRows.find((x) => x.lmkKey === selLmk)) ||
+    searchRows[0];
 
   const title =
     addr.line1 ||
-    first?.address ||
+    matched?.address ||
     state.selection?.label ||
     "Registered asset";
 
+  const floorSqm =
+    cert.floorAreaSqm ||
+    matched?.floorAreaSqm ||
+    0;
+  const currentRating =
+    cert.energyRating ||
+    matched?.energyRating ||
+    "";
+  const potentialRating =
+    cert.potentialEnergyRating ||
+    matched?.potentialEnergyRating ||
+    "";
+
   const rows = [];
-  rows.push(row("Postcode", escapeHtml(first?.postcode || state.selection?.postcode || "—")));
-  rows.push(row("UPRN", escapeHtml(first?.uprn || addr.uprn || "—")));
-  rows.push(row("EPC rating", escapeHtml(cert.energyRating || first?.energyRating || "—")));
-  rows.push(row("Floor area", `${formatNumber(cert.floorAreaSqm || first?.floorAreaSqm || 0, 1)} m²`));
+  rows.push(row("Postcode", escapeHtml(matched?.postcode || state.selection?.postcode || "—")));
+  rows.push(row("UPRN", escapeHtml(matched?.uprn || addr.uprn || state.selection?.uprn || "—")));
+  rows.push(row("EPC rating (current)", escapeHtml(currentRating || "—")));
+  rows.push(row("EPC rating (potential)", escapeHtml(potentialRating || "—")));
+  rows.push(row("Floor area", `${formatNumber(floorSqm, 1)} m²`));
   rows.push(
     row(
       "£/m² (if price)",
@@ -44,8 +63,8 @@ export function renderPanelIdentity(state) {
         : "—"
     )
   );
-  rows.push(row("Tenure", escapeHtml(first?.tenure || "—")));
-  rows.push(row("Lodgement", escapeHtml(first?.lodgementDate || "—")));
+  rows.push(row("Tenure", escapeHtml(matched?.tenure || "—")));
+  rows.push(row("Lodgement", escapeHtml(matched?.lodgementDate || cert.lodgementDate || "—")));
 
   root.innerHTML = `
     <h3 class="text-sm font-medium text-[#C7CBD4] mb-3">${escapeHtml(title)}</h3>

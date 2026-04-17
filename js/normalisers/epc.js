@@ -8,22 +8,78 @@ export function safeStr(v) {
 }
 
 /**
+ * @param {Record<string, unknown>} r
+ * @param {string[]} keys
+ */
+function firstDefined(r, keys) {
+  for (const k of keys) {
+    if (r[k] !== undefined && r[k] !== null && r[k] !== "") {
+      return r[k];
+    }
+  }
+  return undefined;
+}
+
+/** EPC API uses hyphenated keys; CSV/glossary also uses TOTAL_FLOOR_AREA style. */
+function pickFloorAreaSqm(r) {
+  const v = firstDefined(r, [
+    "total-floor-area",
+    "floor-area",
+    "total_floor_area",
+    "floor_area",
+    "TOTAL_FLOOR_AREA",
+    "floorArea",
+    "totalFloorArea",
+  ]);
+  return toFloat(v ?? 0);
+}
+
+/** Letter band A–G — current (as lodged). */
+function pickCurrentEnergyRating(r) {
+  const v = firstDefined(r, [
+    "current-energy-rating",
+    "energy-rating",
+    "CURRENT_ENERGY_RATING",
+    "ENERGY_RATING",
+    "energyRating",
+  ]);
+  return safeStr(v ?? "");
+}
+
+/** Letter band A–G — potential if all recommendations implemented. */
+function pickPotentialEnergyRating(r) {
+  const v = firstDefined(r, [
+    "potential-energy-rating",
+    "POTENTIAL_ENERGY_RATING",
+    "potentialEnergyRating",
+  ]);
+  return safeStr(v ?? "");
+}
+
+/**
  * Normalise EPC search row or certificate row.
  * @param {Record<string, unknown>} raw
  */
 export function normaliseEpcRow(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
-  const floorAreaSqm = toFloat(
-    r["floor-area"] ?? r.floorArea ?? r.total_floor_area ?? 0
-  );
+  const floorAreaSqm = pickFloorAreaSqm(r);
   const floorAreaSqft = sqmToSqft(floorAreaSqm);
   const postcode = formatPostcode(normalizePostcode(r.postcode ?? ""));
   const uprn = safeStr(r.uprn ?? "");
   const lmk = safeStr(r["lmk-key"] ?? r.lmkKey ?? "");
-  const assetRating = toInt(r["asset-rating"] ?? r.assetRating ?? 0);
-  const energyRating = safeStr(r["energy-rating"] ?? r.energyRating ?? "");
+  const assetRating = toInt(
+    firstDefined(r, [
+      "asset-rating",
+      "assetRating",
+      "current-energy-efficiency",
+      "CURRENT_ENERGY_EFFICIENCY",
+    ]) ?? 0
+  );
+  const energyRating = pickCurrentEnergyRating(r);
+  const potentialEnergyRating = pickPotentialEnergyRating(r);
   const lodgementDate = formatDateIso(
-    r["lodgement-date"] ?? r.lodgementDate ?? ""
+    firstDefined(r, ["lodgement-date", "lodgementDate", "lodgement-datetime"]) ??
+      ""
   );
   const tenure = safeStr(r.tenure ?? "");
   const propertyType = safeStr(r["property-type"] ?? r.propertyType ?? "");
@@ -38,6 +94,7 @@ export function normaliseEpcRow(raw) {
     floorAreaSqft,
     assetRating,
     energyRating,
+    potentialEnergyRating,
     lodgementDate,
     tenure,
     propertyType,
@@ -59,22 +116,36 @@ export function normaliseEpcSearchResponse(raw) {
 
 export function normaliseEpcCertificateResponse(raw) {
   const o = raw && typeof raw === "object" ? raw : {};
-  const row = o.row || o.rows?.[0] || o;
-  const base = normaliseEpcRow(row);
+  const row =
+    o.row ||
+    (Array.isArray(o.rows) ? o.rows[0] : null) ||
+    o.certificate ||
+    o.data ||
+    o;
+  const r = row && typeof row === "object" ? row : {};
+  const base = normaliseEpcRow(r);
   const price = toInt(
-    row["transaction-price"] ?? row.transactionPrice ?? row.price ?? 0
+    firstDefined(r, ["transaction-price", "transactionPrice", "price"]) ?? 0
   );
   return {
     ...base,
     transactionPrice: price,
     pricePerSqm: pricePerSqm(price, base.floorAreaSqm),
     pricePerSqft: pricePerSqft(price, base.floorAreaSqft),
-    co2Emissions: toFloat(row["co2-emissions"] ?? row.co2Emissions ?? 0),
+    co2Emissions: toFloat(
+      firstDefined(r, ["co2-emissions", "co2Emissions", "co2_emissions"]) ?? 0
+    ),
     heatingCostCurrent: toInt(
-      row["heating-cost-current"] ?? row.heatingCostCurrent ?? 0
+      firstDefined(r, [
+        "heating-cost-current",
+        "heatingCostCurrent",
+      ]) ?? 0
     ),
     hotWaterCostCurrent: toInt(
-      row["hot-water-cost-current"] ?? row.hotWaterCostCurrent ?? 0
+      firstDefined(r, [
+        "hot-water-cost-current",
+        "hotWaterCostCurrent",
+      ]) ?? 0
     ),
   };
 }
