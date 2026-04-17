@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>£Per — Property Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: Inter, system-ui, sans-serif;
+        background: #0b0e13;
+        color: #c7cbd4;
+      }
+      .font-mono {
+        font-family: "Roboto Mono", ui-monospace, monospace;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen antialiased transition-colors">
+    <header
+      class="border-b border-[#1F242D] bg-[#141820] sticky top-0 z-20"
+    >
+      <div
+        class="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row md:items-end gap-4"
+      >
+        <div class="flex-1">
+          <h1 class="text-xl font-semibold text-[#C7CBD4] tracking-tight">
+            £Per
+          </h1>
+          <p class="text-sm text-[#8E95A3] mt-1">
+            Forensic UK property intelligence — panel-driven dashboard
+          </p>
+        </div>
+        <div class="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+          <input
+            id="search-input"
+            type="text"
+            placeholder="UK postcode (e.g. SW1A 1AA)"
+            class="flex-1 rounded-md border border-[#1F242D] bg-[#0B0E13] px-3 py-2 text-sm text-[#C7CBD4] placeholder-[#8E95A3] focus:outline-none focus:ring-2 focus:ring-[#60A5FA]/40"
+          />
+          <button
+            id="search-btn"
+            type="button"
+            class="rounded-md bg-[#60A5FA] text-[#0B0E13] px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            Search
+          </button>
+        </div>
+        <div class="w-full md:w-72">
+          <label for="address-select" class="sr-only">Select address</label>
+          <select
+            id="address-select"
+            disabled
+            class="w-full rounded-md border border-[#1F242D] bg-[#0B0E13] px-3 py-2 text-sm text-[#C7CBD4] focus:outline-none focus:ring-2 focus:ring-[#60A5FA]/40 disabled:opacity-50"
+          >
+            <option value="">Resolve a postcode first…</option>
+          </select>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6 space-y-4">
+      <!-- Row 1 -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section
+          class="rounded-lg border border-[#1F242D] bg-[#141820] p-4 shadow-sm transition-opacity"
+        >
+          <h2 class="text-sm font-medium text-[#8E95A3] uppercase tracking-wide mb-3">
+            Registered Asset
+          </h2>
+          <div id="panel-identity" class="min-h-[120px]"></div>
+        </section>
+        <section
+          class="rounded-lg border border-[#1F242D] bg-[#141820] p-4 shadow-sm"
+        >
+          <h2 class="text-sm font-medium text-[#8E95A3] uppercase tracking-wide mb-3">
+            Map
+          </h2>
+          <div id="panel-map" class="min-h-[200px]"></div>
+        </section>
+      </div>
+
+      <!-- Row 2 -->
+      <section
+        class="rounded-lg border border-[#1F242D] bg-[#141820] p-4 shadow-sm"
+      >
+        <h2 class="text-sm font-medium text-[#8E95A3] uppercase tracking-wide mb-3">
+          Market Evidence
+        </h2>
+        <div id="panel-market" class="min-h-[80px]"></div>
+      </section>
+
+      <!-- Row 3 -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section
+          class="rounded-lg border border-[#1F242D] bg-[#141820] p-4 shadow-sm"
+        >
+          <h2 class="text-sm font-medium text-[#8E95A3] uppercase tracking-wide mb-3">
+            Schools
+          </h2>
+          <div id="panel-schools" class="min-h-[100px]"></div>
+        </section>
+        <section
+          class="rounded-lg border border-[#1F242D] bg-[#141820] p-4 shadow-sm"
+        >
+          <h2 class="text-sm font-medium text-[#8E95A3] uppercase tracking-wide mb-3">
+            Transport
+          </h2>
+          <div id="panel-transport" class="min-h-[100px]"></div>
+        </section>
+      </div>
+
+      <!-- Row 4 -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section
+          class="rounded-lg border border-[#1F242D] bg-[#141820] p-4 shadow-sm"
+        >
+          <h2 class="text-sm font-medium text-[#8E95A3] uppercase tracking-wide mb-3">
+            Utilities
+          </h2>
+          <div id="panel-utilities" class="min-h-[80px]"></div>
+        </section>
+        <section
+          class="rounded-lg border border-[#1F242D] bg-[#141820] p-4 shadow-sm"
+        >
+          <h2 class="text-sm font-medium text-[#8E95A3] uppercase tracking-wide mb-3">
+            Environmental Risk
+          </h2>
+          <div id="panel-risk" class="min-h-[80px]"></div>
+        </section>
+      </div>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
