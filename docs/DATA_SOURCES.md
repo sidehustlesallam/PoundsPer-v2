@@ -1,65 +1,22 @@
-# Data Sources Documentation for £Per
+# £Per Data Sources Documentation
 
-This document catalogs all external and internal data sources utilized by the £Per due-diligence engine. Understanding these sources is critical for maintenance, debugging, and future expansion.
+This document provides a comprehensive overview of all external data sources utilized by the £Per engine. Each source is critical for the due-diligence dashboard and must be maintained for accuracy.
 
-## 🌐 External APIs (Requires API Keys)
+## 🌐 Data Source Overview
 
-### 1. EPC API (Energy Performance Certificate)
-*   **Purpose:** Provides the energy efficiency rating for a property.
-*   **Data Type:** Structured JSON/API response.
-*   **Key Inputs:** UPRN (Unique Property Reference Number).
-*   **Key Outputs:** Latest EPC rating (A-G), Potential EPC rating, Floor area (sqft/sqm).
-*   **Authentication:** Requires `EPC_API_KEY` and `EPC_BASE_URL` environment variables.
-*   **Considerations:** The API must be called server-side (Worker) to protect the API key. The Worker must handle rate limiting and API version changes.
+| Module | Source Name | API/Method | Key Parameters | Data Type | Limitations/Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Addresses** | UK Postcode/Address API | External API Call | Postcode | Structured JSON | Requires a commercial API key. Coverage may be limited to specific postcodes. |
+| **EPC** | Energy Performance Certificate | Open Data Commons API | UPRN | CSV/Structured Data | Data is historical and may not reflect current energy efficiency. Requires `EPC_API_KEY`. |
+| **Sales** | Recent Property Sales (PPI) | Land Registry SPARQL | Postcode | Graph Data | Data is limited to recorded sales. Requires complex SPARQL querying. |
+| **HPI** | Housing Price Index | Land Registry SPARQL | Locality | Graph Data | Provides an index for price adjustment. Requires complex SPARQL querying. |
+| **Schools** | Educational Facilities | Overpass API | Lat/Lng, Radius | GeoJSON/XML | Coverage depends on the OpenStreetMap data quality. Only provides POI data, not official ratings. |
+| **Utilities** | Water Provider & Broadband | Static Dataset / API | UPRN | Structured JSON | Water provider is typically static. Broadband speed requires a dedicated, reliable data source. |
+| **Transport** | Transport Links | Overpass API | Lat/Lng, Radius | GeoJSON/XML | Provides general POIs (stations, stops). Requires filtering to identify relevant transport types. |
+| **Flood Risk** | Environment Agency Flood Data | External API Call | Lat/Lng | Structured JSON | Data is based on official flood risk maps. Requires `FLOOD_API_KEY`. |
 
-### 2. Broadband API (Ofcom/ThinkBroadband)
-*   **Purpose:** Predicts available broadband speeds at a given location.
-*   **Data Type:** Structured JSON/API response.
-*   **Key Inputs:** Location coordinates (Lat/Lng) or UPRN.
-*   **Key Outputs:** Predicted download and upload speeds.
-*   **Authentication:** Requires `BROADBAND_API_KEY` and `BROADBAND_BASE_URL` environment variables.
-*   **Considerations:** Must be called server-side (Worker). The API response structure must be robustly parsed.
+## ⚙️ Implementation Notes
 
-### 3. Environment Agency API (Flood Risk)
-*   **Purpose:** Determines the flood risk rating for a property.
-*   **Data Type:** Structured JSON/API response.
-*   **Key Inputs:** Location coordinates (Lat/Lng).
-*   **Key Outputs:** Flood risk rating (e.g., Low, Medium, High).
-*   **Authentication:** Requires `FLOOD_API_KEY` and `FLOOD_BASE_URL` environment variables.
-*   **Considerations:** Must be called server-side (Worker). The API response must be validated against expected risk categories.
-
-## 📊 Open Data Sources (No API Key Required)
-
-### 4. Land Registry SPARQL (Property Price Index - PPI & HPI)
-*   **Purpose:** Provides historical sales data and calculates localized price indices.
-*   **Data Type:** SPARQL query results (Graph/JSON).
-*   **Key Inputs:** Postcode, Locality.
-*   **Key Outputs:** Sale price, floor area, calculated £/sqft, £/sqm, and HPI-adjusted price.
-*   **Authentication:** None (Uses public SPARQL endpoints).
-*   **Considerations:** Queries must be robust against changes in the underlying SPARQL endpoint structure. The Worker must handle complex graph traversal and data normalization.
-
-### 5. Overpass API (Schools & Transport)
-*   **Purpose:** Retrieves geographical data for points of interest (POIs).
-*   **Data Type:** Overpass API response (GeoJSON/XML).
-*   **Key Inputs:** Location coordinates (Lat/Lng) and search radius.
-*   **Key Outputs:** List of nearby schools, nearest rail/tube stations.
-*   **Authentication:** None.
-*   **Considerations:** Rate limiting and query complexity must be managed within the Worker. The frontend should handle the display of GeoJSON data.
-
-## 📄 Static & Scraping Sources
-
-### 6. Ofsted Ratings
-*   **Purpose:** Retrieves the educational inspection rating for local schools.
-*   **Data Type:** HTML content.
-*   **Key Inputs:** School name or location.
-*   **Key Outputs:** Ofsted rating and inspection date.
-*   **Authentication:** None.
-*   **Considerations:** **Highly brittle.** Relies on HTML scraping, meaning any change to the target website's structure will break this module. This requires manual maintenance.
-
-### 7. Water Provider Data
-*   **Purpose:** Identifies the water utility provider for a property.
-*   **Data Type:** Static JSON mapping/dataset.
-*   **Key Inputs:** UPRN or Postcode.
-*   **Key Outputs:** Name of the water provider.
-*   **Authentication:** None.
-*   **Considerations:** Requires periodic manual updates to the static dataset. This data should be stored in a local JSON file or database accessible by the Worker.
+*   **API Keys:** All sources requiring external keys must use the corresponding `env.*` variables in the Cloudflare Worker.
+*   **Query Complexity:** Sources like Sales and HPI require advanced graph querying (SPARQL) and are the most complex to maintain.
+*   **Data Freshness:** The freshness and completeness of the data are entirely dependent on the external source's update cycle.

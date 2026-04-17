@@ -1,74 +1,55 @@
-# Module Documentation: £Per Data Panels
+# £Per Module Documentation
 
-This document details the inputs, outputs, and replaceability considerations for each data panel module within the £Per dashboard.
+This document details the inputs, outputs, and functional scope for every data panel/module displayed on the £Per dashboard.
 
-## 1. EPC Panel (Energy Performance Certificate)
-*   **Purpose:** Displays the energy efficiency rating of the property.
-*   **Inputs:** UPRN (Unique Property Reference Number).
-*   **Outputs:**
-    *   Latest EPC Rating (A-G).
-    *   Potential EPC Rating.
-    *   Floor area (sqft and sqm).
-*   **Data Source:** External EPC API (Requires `EPC_API_KEY`).
-*   **Replaceability:** High. If the primary EPC API changes or becomes unavailable, this module must be updated to use an alternative rating source or a different API endpoint.
+## 🧩 Module Breakdown
 
-## 2. Recent Sales & Local Pricing Panel
-*   **Purpose:** Provides historical sales data and calculates local pricing averages.
-*   **Inputs:** Postcode.
-*   **Outputs:**
-    *   List of the 5 most recent sales in the postcode.
-    *   Sale price, floor area, calculated £/sqft, and £/sqm for each sale.
-    *   Local average pricing metrics.
-*   **Data Source:** Land Registry SPARQL (Open Data).
-*   **Replaceability:** Medium. While the SPARQL endpoint is stable, changes in the underlying Land Registry data schema could break the queries.
+### 1. Postcode Search (Core Input)
+*   **Inputs:** UK Postcode (String).
+*   **Outputs:** Array of structured addresses, including `fullAddress`, `uprn`, `lat`, `lng`.
+*   **Notes:** This is the primary entry point. The output feeds the Address Selector and the Map Panel.
 
-## 3. HPI Panel (House Price Index)
-*   **Purpose:** Calculates an adjusted predicted property price based on local market trends.
-*   **Inputs:** Locality (Postcode/Area).
-*   **Outputs:**
-    *   Adjusted predicted price.
-    *   Updated £/sqft and £/sqm based on HPI adjustment.
-*   **Data Source:** Land Registry SPARQL (Open Data).
-*   **Replaceability:** Medium. Dependent on the SPARQL query structure and the availability of HPI data.
+### 2. Address Selector (Core Input)
+*   **Inputs:** Selected Address Object (from Postcode Search).
+*   **Outputs:** Confirmed `UPRN`, `Lat`, `Lng`, and `FullAddress` for the selected property.
+*   **Notes:** This component validates and passes the core identifiers to all subsequent panels.
 
-## 4. Schools Panel
-*   **Purpose:** Identifies the nearest educational institutions and their ratings.
-*   **Inputs:** Latitude and Longitude (of the property).
-*   **Outputs:**
-    *   List of nearest schools.
-    *   Ofsted rating and inspection date.
-*   **Data Source:** Overpass API (Open Data) and HTML Scraping (Open Data).
-*   **Replaceability:** Low to Medium. Overpass API is robust, but the HTML scraping component is brittle and highly susceptible to changes in the target website's structure.
+### 3. EPC Panel (Energy Performance Certificate)
+*   **Inputs:** UPRN (String).
+*   **Outputs:** Structured data including EPC rating (A-G), energy efficiency score, and key recommendations.
+*   **Notes:** Critical for assessing immediate property value and sustainability.
 
-## 5. Utilities & Connectivity Panel
-*   **Purpose:** Provides information on water provision and broadband speed prediction.
-*   **Inputs:** UPRN (for water provider) and Lat/Lng (for broadband).
-*   **Outputs:**
-    *   Water provider name (static dataset).
-    *   Predicted broadband speed (download/upload).
-*   **Data Source:** Static Dataset (Water) and External API (Broadband).
-*   **Replaceability:** Medium. The broadband data source is prone to changes in the underlying data provider's API.
+### 4. Recent Sales Panel (PPI)
+*   **Inputs:** Postcode (String).
+*   **Outputs:** Array of sale records, including `date`, `price`, `areaSqft`, `pricePerSqft`, and `pricePerSqm`.
+*   **Notes:** Provides market context. The calculation of derived metrics (e.g., price per square foot) is crucial for comparison.
 
-## 6. Transport Panel
-*   **Purpose:** Lists nearby public transport links.
-*   **Inputs:** Latitude and Longitude (of the property).
-*   **Outputs:**
-    *   Nearest rail/tube stations.
-    *   Distance and travel time estimates.
-*   **Data Source:** Overpass API (Open Data).
-*   **Replaceability:** High. Overpass API is a reliable source for geographical data, making this module relatively stable.
+### 5. HPI Panel (Housing Price Index)
+*   **Inputs:** Locality (String).
+*   **Outputs:** Index values (`hpiIndex`), adjusted price estimates (`adjustedPrice`), and updated price metrics.
+*   **Notes:** Used to normalize property values against regional market trends.
 
-## 7. Flood Risk Panel
-*   **Purpose:** Assesses the property's risk of flooding.
-*   **Inputs:** Latitude and Longitude (of the property).
-*   **Outputs:**
-    *   Flood risk rating (e.g., Low, Medium, High).
-*   **Data Source:** Environment Agency API (Requires `FLOOD_API_KEY`).
-*   **Replaceability:** Medium. Dependent on the structure and availability of the Environment Agency API.
+### 6. Schools Panel
+*   **Inputs:** Lat/Lng (Coordinates).
+*   **Outputs:** Array of nearby schools, including `name`, `rating`, and `distanceKm`.
+*   **Notes:** A key factor for family buyers. The data is location-based and requires accurate coordinates.
 
-## 8. Map Panel
-*   **Purpose:** Visual representation of the property and surrounding data points.
-*   **Inputs:** Latitude and Longitude (of the property).
-*   **Outputs:** Interactive map view with markers for the property, nearest schools, and transport links.
-*   **Data Source:** Mapbox/Leaflet (Client-side rendering).
-*   **Replaceability:** Low. This is a presentation layer and is less dependent on external data sources, focusing instead on visualization best practices.
+### 7. Utilities Panel
+*   **Inputs:** UPRN (String).
+*   **Outputs:** Water provider name (String), Broadband speed details (Object).
+*   **Notes:** Provides essential infrastructure information. The broadband data should ideally be linked to the UPRN.
+
+### 8. Transport Panel
+*   **Inputs:** Lat/Lng (Coordinates).
+*   **Outputs:** Array of nearby transport links, including `name`, `type` (Rail/Tube), `distanceKm`, and `travelTimeMin`.
+*   **Notes:** Measures connectivity and commute feasibility.
+
+### 9. Flood Risk Panel
+*   **Inputs:** Lat/Lng (Coordinates).
+*   **Outputs:** Risk level (String), Flood Zone (String), and detailed risk description (String).
+*   **Notes:** A mandatory due-diligence check. The output must be displayed with high visibility.
+
+### 10. Map Panel
+*   **Inputs:** Lat/Lng (Coordinates).
+*   **Outputs:** Interactive map visualization with markers for the property and nearby POIs (schools, stations).
+*   **Notes:** This is the visual centerpiece, integrating all location-based data.

@@ -1,44 +1,36 @@
-# Worker Deployment Guide for £Per
+## £Per Worker Deployment Guide (Manual Process)
 
-This guide provides step-by-step instructions for deploying and managing the £Per backend Worker on Cloudflare. The repository contains the canonical code, but the deployment process must be managed directly within the Cloudflare platform.
+This guide details the manual steps required to deploy the £Per Cloudflare Worker. **Crucially, this process does not involve automated deployment tools.** All code must be manually copied and pasted into the Cloudflare Workers dashboard or via the CLI, and environment variables must be set manually.
 
-## 🚀 Deployment Steps
+### 🛠️ Phase 0: Prerequisites and Setup
 
-### 1. Prerequisites
-*   **Cloudflare Account:** You must have an active Cloudflare account.
-*   **CLI Tool:** Install the Cloudflare CLI (`npm install -g wrangler`).
-*   **Login:** Log in via the CLI (`wrangler login`).
-*   **Code:** Ensure your local repository contains the latest `cloudflare/worker.js` file.
+1.  **Code Preparation:** Ensure your `cloudflare/worker.js` file contains the final, tested logic.
+2.  **API Key Acquisition:** Acquire all necessary API keys (EPC, Broadband, Environment Agency, etc.).
+3.  **Environment Variables Setup:**
+    *   Navigate to the Cloudflare Workers dashboard for your project.
+    *   Go to the "Settings" tab and locate "Environment Variables."
+    *   Manually set all required variables:
+        *   `EPC_BASE_URL`: [Your EPC Base URL]
+        *   `EPC_API_KEY`: [Your EPC API Key]
+        *   `BROADBAND_BASE_URL`: [Your Broadband Base URL]
+        *   `BROADBAND_API_KEY`: [Your Broadband API Key]
+        *   `FLOOD_BASE_URL`: [Your Flood Base URL]
+        *   `FLOOD_API_KEY`: [Your Flood API Key]
+        *   *(Add any other required keys)*
 
-### 2. Configuration
-*   **`wrangler.toml`:** Verify or create a `wrangler.toml` file in the root directory. This file must define the Worker's name, environment, and entry point.
-*   **Environment Variables (Secrets):** Before deployment, all required API keys must be set as environment variables in the Cloudflare dashboard or via the CLI.
-    *   `EPC_BASE_URL`
-    *   `EPC_API_KEY`
-    *   `BROADBAND_BASE_URL`
-    *   `BROADBAND_API_KEY`
-    *   `FLOOD_BASE_URL`
-    *   `FLOOD_API_KEY`
-    *   *Note: These secrets must never be committed to version control.*
+### 💻 Phase 1: Worker Deployment (Manual Copy/Paste)
 
-### 3. Deployment
-*   Run the deployment command from the root directory:
-    ```bash
-    wrangler deploy
-    ```
-*   This command uploads the `cloudflare/worker.js` code and links it to the configured environment variables.
+1.  **Copy Code:** Open the `cloudflare/worker.js` file in your local repository. Select and copy the *entire* content of the file.
+2.  **Paste Code:** In the Cloudflare Workers dashboard, navigate to the "Code" editor. Delete any existing boilerplate code and paste the entire content of `worker.js`.
+3.  **Save and Deploy:** Click "Save" and then "Deploy." The Worker is now live and accessible via your configured route.
 
-## 🔄 Updating the Worker
+### 🔄 Updating the Worker Code
 
-The Worker must be updated whenever the core logic in `cloudflare/worker.js` changes.
+When the core logic of the Worker changes:
 
-1.  **Local Changes:** Make necessary code modifications in `cloudflare/worker.js`.
-2.  **Testing:** Always test the changes locally first using `wrangler dev`.
-3.  **Deployment:** Re-run the deployment command: `wrangler deploy`.
+1.  **Local Update:** Modify the `cloudflare/worker.js` file locally.
+2.  **Copy Code:** Copy the *entire* updated content of `worker.js`.
+3.  **Manual Overwrite:** Repeat the deployment steps above (Paste Code, Save, Deploy) to overwrite the existing live code with the new version.
 
-## ⚠️ Best Practices
-
-*   **Security:** Never hardcode API keys or sensitive URLs directly into the code. Always use `env.*` variables.
-*   **Error Handling:** Implement comprehensive `try/catch` blocks in the Worker to handle external API failures gracefully, ensuring the frontend always receives a structured JSON response, even if the data is missing.
-*   **Caching:** Consider implementing caching strategies within the Worker for frequently requested, non-real-time data (e.g., static datasets) to reduce API calls and improve performance.
-*   **Mock Data:** When developing, use mock data structures (as shown in `cloudflare/worker.js`) but ensure the final production code uses the real API calls.
+**⚠️ IMPORTANT NOTE:** Because this is a manual process, always verify that the code you are pasting is the complete, final version of your `worker.js` file. Do not rely on automated deployment pipelines for this project.
+"
