@@ -39,17 +39,34 @@
             Forensic UK property intelligence — panel-driven dashboard
           </p>
         </div>
-        <div class="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
-          <input
-            id="search-input"
-            type="text"
-            placeholder="UK postcode (e.g. SW1A 1AA)"
-            class="flex-1 rounded-md border border-[#1F242D] bg-[#0B0E13] px-3 py-2 text-sm text-[#C7CBD4] placeholder-[#8E95A3] focus:outline-none focus:ring-2 focus:ring-[#60A5FA]/40"
-          />
+        <div
+          class="flex flex-col gap-2 w-full md:w-auto lg:flex-row lg:items-end lg:flex-1 lg:max-w-3xl"
+        >
+          <div class="flex flex-col gap-1 flex-1 min-w-0">
+            <label for="search-input" class="text-xs text-[#8E95A3]">Postcode</label>
+            <input
+              id="search-input"
+              type="text"
+              autocomplete="postal-code"
+              placeholder="e.g. SW1A 1AA"
+              class="w-full rounded-md border border-[#1F242D] bg-[#0B0E13] px-3 py-2 text-sm text-[#C7CBD4] placeholder-[#8E95A3] focus:outline-none focus:ring-2 focus:ring-[#60A5FA]/40"
+            />
+          </div>
+          <div class="flex flex-col gap-1 flex-1 min-w-0">
+            <label for="uprn-input" class="text-xs text-[#8E95A3]">Or UPRN</label>
+            <input
+              id="uprn-input"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              placeholder="7–12 digits"
+              class="w-full rounded-md border border-[#1F242D] bg-[#0B0E13] px-3 py-2 text-sm text-[#C7CBD4] placeholder-[#8E95A3] focus:outline-none focus:ring-2 focus:ring-[#60A5FA]/40"
+            />
+          </div>
           <button
             id="search-btn"
             type="button"
-            class="rounded-md bg-[#60A5FA] text-[#0B0E13] px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity"
+            class="shrink-0 rounded-md bg-[#60A5FA] text-[#0B0E13] px-4 py-2 text-sm font-medium hover:opacity-90 transition-opacity lg:mb-0.5"
           >
             Search
           </button>
@@ -61,7 +78,7 @@
             disabled
             class="w-full rounded-md border border-[#1F242D] bg-[#0B0E13] px-3 py-2 text-sm text-[#C7CBD4] focus:outline-none focus:ring-2 focus:ring-[#60A5FA]/40 disabled:opacity-50"
           >
-            <option value="">Resolve a postcode first…</option>
+            <option value="">Search by postcode or UPRN first…</option>
           </select>
         </div>
       </div>

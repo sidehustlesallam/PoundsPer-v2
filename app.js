@@ -66,7 +66,11 @@ function populateAddressSelect(results) {
 }
 
 async function runResolve() {
-  const input = $("search-input")?.value?.trim() || "";
+  const uprnRaw = $("uprn-input")?.value?.trim() || "";
+  const postcodeRaw = $("search-input")?.value?.trim() || "";
+  const uprnDigits = uprnRaw.replace(/\s+/g, "");
+  const input =
+    uprnDigits && /^\d{7,12}$/.test(uprnDigits) ? uprnDigits : postcodeRaw;
   if (!input) return;
 
   clearErrors();
@@ -229,6 +233,9 @@ function onAddressChange() {
 function init() {
   $("search-btn")?.addEventListener("click", () => runResolve());
   $("search-input")?.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") runResolve();
+  });
+  $("uprn-input")?.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") runResolve();
   });
   $("address-select")?.addEventListener("change", onAddressChange);

@@ -62,6 +62,12 @@ function looksLikePostcode(s) {
   return /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(String(s).trim());
 }
 
+/** UK UPRN is numeric, typically 7–12 digits (spaces ignored). */
+function looksLikeUprn(s) {
+  const t = String(s || "").replace(/\s+/g, "");
+  return /^\d{7,12}$/.test(t);
+}
+
 /**
  * EPC requires HTTP Basic: Authorization: Basic <Base64("email:apikey")>
  * Prefer EPC_EMAIL + EPC_API_KEY (easier key rotation). Precomputed Base64 is fallback only.
@@ -169,14 +175,149 @@ async function lookupPostcodeGeo(pcFormatted) {
 }
 
 /**
+ * Resolve by UPRN: EPC domestic search only; geocode each row’s postcode for map centroid.
+ */
+async function handleResolveByUprn(uprnDigits, env, origin) {
+  const headers = epcAuthHeaders(env);
+  if (!headers) {
+    return json(
+      {
+        results: [],
+        query: uprnDigits,
+        hint: "EPC auth not configured on worker — cannot resolve by UPRN.",
+        source: "uprn",
+      },
+      200,
+      origin
+    );
+  }
+
+  const epcSearchUrl = `${EPC_BASE}/domestic/search?${new URLSearchParams({
+    uprn: uprnDigits,
+    size: "50",
+  }).toString()}`;
+  const { res, body } = await fetchJson(epcSearchUrl, { headers });
+  if (!res.ok) {
+    return json(
+      {
+        results: [],
+        query: uprnDigits,
+        hint: "EPC search by UPRN failed.",
+        status: res.status,
+        source: "uprn",
+      },
+      200,
+      origin
+    );
+  }
+
+  const epcRows = body && Array.isArray(body.rows) ? body.rows : [];
+  if (!epcRows.length) {
+    return json(
+      {
+        results: [],
+        query: uprnDigits,
+        hint: "No domestic EPC records found for this UPRN.",
+        source: "uprn",
+      },
+      200,
+      origin
+    );
+  }
+
+  const geoCache = new Map();
+  async function geoForPostcode(pcDisp) {
+    if (!pcDisp || !String(pcDisp).trim()) return null;
+    const key = normalizePostcode(pcDisp);
+    if (geoCache.has(key)) return geoCache.get(key);
+    const g = await lookupPostcodeGeo(formatPostcode(key));
+    geoCache.set(key, g);
+    return g;
+  }
+
+  const results = [];
+  const seen = new Set();
+  for (const row of epcRows) {
+    const lmk = row["lmk-key"] || row.lmkKey || "";
+    if (!lmk || seen.has(lmk)) continue;
+    seen.add(lmk);
+    const rowPcRaw = row.postcode || "";
+    const rowPc = rowPcRaw
+      ? formatPostcode(normalizePostcode(rowPcRaw))
+      : "";
+    const geo = rowPc ? await geoForPostcode(rowPc) : null;
+    const a1 =
+      row.address1 ||
+      row["address-line-1"] ||
+      row["address_line_1"] ||
+      "";
+    const a2 = row.address2 || row["address-line-2"] || row["address_line_2"] || "";
+    const a3 = row.address3 || row["address-line-3"] || row["address_line_3"] || "";
+    const parts = [a1, a2, a3].filter((x) => x && String(x).trim());
+    const line = parts.join(", ");
+    const pcNorm = rowPc ? normalizePostcode(rowPc) : "";
+    const label = line
+      ? `${line} — ${rowPc || uprnDigits}`
+      : `UPRN ${uprnDigits} — EPC ${lmk.slice(0, 8)}…`;
+    results.push({
+      id: `epc:${lmk}`,
+      label,
+      postcode: rowPc || "",
+      postcodeNormalized: pcNorm,
+      lat: geo && geo.ok ? geo.lat : "",
+      lon: geo && geo.ok ? geo.lon : "",
+      localAuthority:
+        row["local-authority"] ||
+        (geo && geo.ok ? geo.localAuthority : "") ||
+        "",
+      region: geo && geo.ok ? geo.region || "" : "",
+      country: geo && geo.ok ? geo.country || "" : "",
+      parliamentary_constituency:
+        geo && geo.ok ? geo.parliamentary_constituency || "" : "",
+      uprn: row.uprn != null ? String(row.uprn) : uprnDigits,
+      lmkKey: lmk,
+    });
+  }
+
+  if (results.length === 0) {
+    return json(
+      {
+        results: [],
+        query: uprnDigits,
+        hint: "No usable EPC rows for this UPRN.",
+        source: "uprn",
+      },
+      200,
+      origin
+    );
+  }
+
+  return json(
+    {
+      results,
+      query: uprnDigits,
+      source: "uprn+epc+postcodes",
+    },
+    200,
+    origin
+  );
+}
+
+/**
  * Resolve: prefer many EPC domestic certificates for the postcode (dropdown per property);
  * fall back to a single postcodes.io centroid row if EPC is unavailable or returns nothing.
+ * Numeric 7–12 digit input is treated as UPRN (EPC domestic search).
  */
 async function handleResolve(url, env, origin) {
   const input = url.searchParams.get("input") || "";
   const trimmed = input.trim();
   if (!trimmed) {
     return json({ results: [] }, 200, origin);
+  }
+
+  const compactUprn = trimmed.replace(/\s+/g, "");
+  if (looksLikeUprn(compactUprn)) {
+    return handleResolveByUprn(compactUprn, env, origin);
   }
 
   let pc = trimmed;

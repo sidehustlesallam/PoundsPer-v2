@@ -1,5 +1,6 @@
 import { el } from "../utils/dom.js";
 import { formatGbp, formatNumber } from "../utils/format.js";
+import { sqmToSqft } from "../utils/math.js";
 
 function row(k, v) {
   return `<div class="flex justify-between gap-2 py-1 border-b border-[#1F242D]"><span class="text-[#8E95A3]">${k}</span><span class="font-mono text-[#C7CBD4] text-right">${v}</span></div>`;
@@ -37,9 +38,9 @@ export function renderPanelIdentity(state) {
     "Registered asset";
 
   const floorSqm =
-    cert.floorAreaSqm ||
-    matched?.floorAreaSqm ||
-    0;
+    Number(cert.floorAreaSqm || matched?.floorAreaSqm || 0) || 0;
+  const floorSqft =
+    floorSqm > 0 ? sqmToSqft(floorSqm) : 0;
   const currentRating =
     cert.energyRating ||
     matched?.energyRating ||
@@ -54,7 +55,14 @@ export function renderPanelIdentity(state) {
   rows.push(row("UPRN", escapeHtml(matched?.uprn || addr.uprn || state.selection?.uprn || "—")));
   rows.push(row("EPC rating (current)", escapeHtml(currentRating || "—")));
   rows.push(row("EPC rating (potential)", escapeHtml(potentialRating || "—")));
-  rows.push(row("Floor area", `${formatNumber(floorSqm, 1)} m²`));
+  rows.push(
+    row(
+      "Floor area",
+      floorSqm > 0
+        ? `${formatNumber(floorSqm, 1)} m² · ${formatNumber(floorSqft, 0)} ft²`
+        : "—"
+    )
+  );
   rows.push(
     row(
       "£/m² (if price)",
@@ -64,7 +72,18 @@ export function renderPanelIdentity(state) {
     )
   );
   rows.push(row("Tenure", escapeHtml(matched?.tenure || "—")));
-  rows.push(row("Lodgement", escapeHtml(matched?.lodgementDate || cert.lodgementDate || "—")));
+  rows.push(
+    row(
+      "Date of EPC certificate",
+      escapeHtml(
+        matched?.certificateDate ||
+          cert.certificateDate ||
+          matched?.lodgementDate ||
+          cert.lodgementDate ||
+          "—"
+      )
+    )
+  );
 
   root.innerHTML = `
     <h3 class="text-sm font-medium text-[#C7CBD4] mb-3">${escapeHtml(title)}</h3>

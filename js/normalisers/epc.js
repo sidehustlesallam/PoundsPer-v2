@@ -81,6 +81,10 @@ export function normaliseEpcRow(raw) {
     firstDefined(r, ["lodgement-date", "lodgementDate", "lodgement-datetime"]) ??
       ""
   );
+  const inspectionDate = formatDateIso(
+    firstDefined(r, ["inspection-date", "inspectionDate"]) ?? ""
+  );
+  const certificateDate = inspectionDate || lodgementDate;
   const tenure = safeStr(r.tenure ?? "");
   const propertyType = safeStr(r["property-type"] ?? r.propertyType ?? "");
   const builtForm = safeStr(r["built-form"] ?? r.builtForm ?? "");
@@ -96,6 +100,7 @@ export function normaliseEpcRow(raw) {
     energyRating,
     potentialEnergyRating,
     lodgementDate,
+    certificateDate,
     tenure,
     propertyType,
     builtForm,
