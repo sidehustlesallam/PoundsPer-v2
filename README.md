@@ -2,7 +2,7 @@
 
 A forensic, panel-driven UK property dashboard: **postcode** or **UPRN** search, EPC-led identity, Land Registry recent sales, optional UKHPI context, Ofsted nearby providers (scraped), map, and placeholder modules for transport, utilities, and risk.
 
-**Resume work:** read [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for the authoritative file map, secrets, route behaviour, and known caveats (map DOM, Ofsted HTML, UKHPI LA naming).
+**Resume work:** open [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) and start from **Quick resume** — it lists the read order, deploy model, `API_BASE`, EPC secrets, and where transport/utilities/risk placeholders are wired (`app.js` → `js/api/*` → `js/normalisers/*` → `js/panels/panel5–7`). Then skim this README and [`AGENTS.md`](AGENTS.md).
 
 ---
 
@@ -23,7 +23,7 @@ https://royal-bar-6cc5.sidehustlesallam.workers.dev
 1. User enters a **UK postcode** and/or **UPRN** (separate fields in the header). If the UPRN field contains **7–12 digits**, that value is sent to `/resolve`; otherwise the postcode field is used.
 2. **`/resolve`** returns dropdown rows (EPC-backed for postcode or UPRN, or postcodes.io centroid fallback when EPC has no rows for a postcode).
 3. User selects an address.
-4. **`loadDatasetForSelection()`** in `app.js` fetches in parallel: geo, EPC search, PPI, HPI, schools, transport, broadband, flood, radon; then EPC certificate and `/address` when applicable.
+4. **`loadDatasetForSelection()`** in `app.js` fetches in parallel: geo, EPC search, PPI, HPI, schools, **transport** (`/transport` with **lat/lon** from the selection), **broadband** (`/broadband` for the Utilities panel), **flood** + **radon** (`/flood`, `/radon` for the Risk panel); then EPC certificate and `/address` when applicable.
 5. Responses are **normalised** under `js/normalisers/` into `state.normalised`.
 6. **`renderAllPanels(state)`** paints all panels, then **`renderFooterContext(state)`** (`js/panels/footer-context.js`) fills the **Notes & data context** block at the bottom of the page (tenure note + value, HPI/PPD references, Ofsted search notes) so main panels stay data-focused.
 
@@ -39,9 +39,9 @@ https://royal-bar-6cc5.sidehustlesallam.workers.dev
 | 1 | **Map** (`panel-map`) — Leaflet + OSM; must preserve `#leaflet-map` across re-renders (see `panel2-map.js`) |
 | 2 | **Market** (`panel-market`) — Last **5** PPD sales (Land Registry SPARQL), address, ft², EPC rating, price, £/ft², HPI-adjusted £ / £/ft² when UKHPI series is available, market averages (HPI/PPD methodology + `meta.note` text: **footer** / `footer-context.js`) |
 | 3 | **Schools** (`panel-schools`) — Ofsted search results (name link, category, rating, distance, last report; Ofsted `meta.note`: **footer** / `footer-context.js`) |
-| 3 | **Transport** (`panel-transport`) — placeholder |
-| 4 | **Utilities** (`panel-utilities`) — placeholder |
-| 4 | **Risk** (`panel-risk`) — placeholder |
+| 3 | **Transport** (`panel-transport`) — Worker placeholder: `/transport?lat=&lon=` |
+| 4 | **Utilities** (`panel-utilities`) — Worker placeholder: `/broadband?postcode=` only (no separate water/tariff API yet) |
+| 4 | **Risk** (`panel-risk`) — Worker placeholders: `/flood?postcode=` + `/radon?postcode=` |
 
 ---
 
@@ -59,10 +59,10 @@ Base URL = Worker origin (`API_BASE` on the client).
 | `/ppi/recent?postcode=` | PPD via SPARQL + optional EPC floor/rating match + **per-row UKHPI** (`adjustedPrice`, `factor`, `hpiSale`, `hpiNow`, `localAuthority`, `hpiTier`, etc.; see DEVELOPMENT.md) |
 | `/hpi?la=&month=&postcode=` | UKHPI SPARQL; `postcode` helps resolve LA when `la` is empty. `la` should be a **district name** (e.g. Westminster), not an ONS code — see [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (Land Registry / postcodes.io). |
 | `/schools/nearby?postcode=` | Ofsted HTML scrape near postcode (2 mi, 10 results) |
-| `/transport?lat=&lon=` | Placeholder |
-| `/broadband?postcode=` | Placeholder |
-| `/flood?postcode=` | Placeholder |
-| `/radon?postcode=` | Placeholder |
+| `/transport?lat=&lon=` | Placeholder (empty `stops`, `meta.note`; client sends centroid coordinates) |
+| `/broadband?postcode=` | Placeholder (Utilities panel; null Mbps, empty `tech`, `meta.note`) |
+| `/flood?postcode=` | Placeholder (Risk panel; `UNKNOWN` level, empty `floodRisk`, `meta.note`) |
+| `/radon?postcode=` | Placeholder (Risk panel; `UNKNOWN` band/risk, `meta.note`) |
 
 ---
 
@@ -73,6 +73,7 @@ Each module has a normaliser. Rules include:
 - **EPC:** Hyphenated API keys; `certificateDate` for display; sqm + sqft on rows.
 - **PPI:** Integer prices, ISO dates, £/m² and £/ft² from area.
 - **Schools:** Miles from metres; Ofsted strings passed through.
+- **Transport / broadband / flood / radon:** Thin adapters over placeholder worker JSON; see `transport.js`, `broadband.js`, `flood.js`, `radon.js` under `js/normalisers/`.
 - **Geo / resolve / others:** See individual files under `js/normalisers/`.
 - **HPI:** `hpi.js` maps `/hpi` worker `series` + `index` for month keys (`YYYY-MM`). **Market HPI columns prefer** per-row `adjustedPrice` from `/ppi/recent` (worker UKHPI enrichment: LA → region → UK). If those are null, the panel falls back to client-side math from `/hpi`.
 
@@ -136,4 +137,4 @@ Crime, planning, tariffs, React migration, offline cache, portfolio mode, **Zoop
 
 ## Summary
 
-This repo is a **build-less SPA** + **one Worker**: EPC-centric resolve, Land Registry SPARQL for PPI (and UKHPI attempt), Ofsted HTML for schools, Leaflet map, and placeholders for other environmental/utility modules. **`docs/DEVELOPMENT.md`** is the handoff file for agents and humans picking the project up later.
+This repo is a **build-less SPA** + **one Worker**: EPC-centric resolve, Land Registry SPARQL for PPI (and UKHPI attempt), Ofsted HTML for schools, Leaflet map, and **four placeholder GET routes** for transport/utilities/risk data. **`docs/DEVELOPMENT.md`** is the handoff file for agents and humans; keep it in sync when you change Worker routes or normalisers.

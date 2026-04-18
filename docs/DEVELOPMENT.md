@@ -2,6 +2,15 @@
 
 Use this file when reopening the project or a new chat session. It describes stack, deployment, data sources, and what is implemented vs still thin.
 
+## Quick resume (next session)
+
+1. Read this file top to bottom, then skim [`AGENTS.md`](../AGENTS.md) and [`README.md`](../README.md).
+2. **Worker:** one script — [`worker/src/index.js`](../worker/src/index.js). Deploy only through the **Cloudflare Dashboard** (paste or upload); there is **no Wrangler** in the repo unless someone adds it deliberately.
+3. **Frontend entry:** [`app.js`](../app.js) → `loadDatasetForSelection()` (parallel fetches after address pick) → [`js/normalisers/`](../js/normalisers/) → [`js/panels/`](../js/panels/) via `renderAllPanels`.
+4. **API origin:** [`js/api/resolve.js`](../js/api/resolve.js) exports `API_BASE`; all worker GETs go through [`js/utils/fetch.js`](../js/utils/fetch.js).
+5. **EPC-dependent routes** need Worker secrets `EPC_EMAIL` + `EPC_API_KEY` (see below).
+6. **Panels 5–7** (transport, utilities, risk) are still **worker placeholders** — see [Transport / utilities / risk (placeholders)](#transport--utilities--risk-placeholders). No separate `transport.js` / `utilities.js` / `risk.js` worker modules in the repo yet.
+
 ## Stack constraints
 
 - **Frontend:** `index.html` + `app.js` + ES modules under `js/`. No bundler; no npm required for the UI. Tailwind and Leaflet load from CDN in `index.html`.
@@ -37,7 +46,24 @@ Defined **once** in `js/api/resolve.js` as `API_BASE`. `js/utils/fetch.js` uses 
 | `GET /ppi/recent?postcode=` | Land Registry **SPARQL** (PPD): last 5 sales by postcode; optional EPC domestic search (same secrets) to attach floor area + rating per row. **UKHPI enrichment (same response):** postcodes.io → local authority name → UKHPI region slug (`/id/region/{slug}`) via label discovery; monthly series from SPARQL; each row gets `hpiSale`, `hpiNow`, `factor`, `adjustedPrice`, `localAuthority`, `hpiTier` (`la` \| `region` \| `uk`), `meta.hpi` summary. Fallback order: LA → postcodes.io **region** → `united-kingdom`. |
 | `GET /hpi?la=&month=&postcode=` | UKHPI via Land Registry **SPARQL** on a fixed `…/id/region/{slug}` (slug from label discovery on `la`, else postcode geo with LA → region → UK fallback). Returns `index` + `series` (month → house price index). **Requires a human district name** for `la` when no `postcode` (or a postcode that resolves to one): discovery uses `rdfs:label` text, not ONS codes (see Land Registry section below). |
 | `GET /schools/nearby?postcode=` | postcodes.io for lat/lon; **HTML fetch** of [reports.ofsted.gov.uk](https://reports.ofsted.gov.uk) search (childcare → nursery school/school with nursery, open, **2 mile** radius, **10** rows). Parsed with regex on `li.search-result` — fragile if Ofsted change markup. |
-| `GET /transport`, `GET /broadband`, `GET /flood`, `GET /radon` | Structured placeholders + `meta.note` (see worker) |
+| `GET /transport?lat=&lon=` | **Placeholder:** requires numeric `lat` / `lon` (client sends centroid from selection). Returns `{ stops: [], lat, lon, meta }` (empty stops + `meta.note`). |
+| `GET /broadband?postcode=` | **Placeholder:** normalised postcode + null Mbps + empty `tech` + `meta.note` (Utilities panel consumes this). |
+| `GET /flood?postcode=` | **Placeholder:** `riskLevel: "UNKNOWN"`, empty `floodRisk[]`, `meta.note` (Risk panel — river/flood slice). |
+| `GET /radon?postcode=` | **Placeholder:** `band` / `riskLevel` `"UNKNOWN"`, `meta.note` (Risk panel — radon slice). |
+
+## Transport / utilities / risk (placeholders)
+
+These three UI panels are live in the layout but **not** backed by real external datasets in the Worker yet.
+
+| Concern | Worker route | Client API module | Normaliser | Panel |
+|--------|--------------|-------------------|-------------|--------|
+| Transport | `/transport?lat=&lon=` | [`js/api/transport.js`](../js/api/transport.js) | [`js/normalisers/transport.js`](../js/normalisers/transport.js) | [`js/panels/panel5-transport.js`](../js/panels/panel5-transport.js) |
+| Utilities (broadband only today) | `/broadband?postcode=` | [`js/api/broadband.js`](../js/api/broadband.js) | [`js/normalisers/broadband.js`](../js/normalisers/broadband.js) | [`js/panels/panel6-utilities.js`](../js/panels/panel6-utilities.js) |
+| Risk (flood + radon) | `/flood?postcode=` and `/radon?postcode=` | [`js/api/flood.js`](../js/api/flood.js), [`js/api/radon.js`](../js/api/radon.js) | [`js/normalisers/flood.js`](../js/normalisers/flood.js), [`js/normalisers/radon.js`](../js/normalisers/radon.js) | [`js/panels/panel7-risk.js`](../js/panels/panel7-risk.js) |
+
+Orchestration: [`app.js`](../app.js) `loadDatasetForSelection()` passes **lat/lon** from the resolved property into `getTransport`, and **postcode** into broadband/flood/radon. Errors for broadband are surfaced on the utilities panel key (`setError("utilities", …)`); flood and radon share the risk panel error slot.
+
+When replacing placeholders, keep normalisers as the single shape the panels read (`state.normalised.*`), or extend them in step with worker JSON changes.
 
 ## Frontend data flow
 
@@ -113,7 +139,14 @@ Shows Ofsted-derived rows: name (link), category, rating, distance (mi), last re
 ## Local testing
 
 - Static UI: open `index.html` or use a small static server if ES module file:// issues.
-- Worker: curl or browser against `API_BASE` routes.
+- Worker: curl or browser against `API_BASE` routes. Example placeholder checks (swap host for your Worker):
+
+```http
+GET /transport?lat=51.5&lon=-0.12
+GET /broadband?postcode=SW1A1AA
+GET /flood?postcode=SW1A1AA
+GET /radon?postcode=SW1A1AA
+```
 
 ## Git
 
@@ -121,4 +154,4 @@ Shows Ofsted-derived rows: name (link), category, rating, distance (mi), last re
 
 ---
 
-*Keep this file aligned with the worker and UI when adding routes, secrets, or upstream integrations.*
+*Keep this file aligned with the worker and UI when adding routes, secrets, or upstream integrations. After any Worker or panel contract change, update this file and [`README.md`](../README.md) API tables in the same PR or commit.*
