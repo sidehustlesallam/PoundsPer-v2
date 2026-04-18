@@ -497,26 +497,44 @@ function epcFloorSqm(row) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-function bestEpcFloorSqmForLine(epcRows, lrLine) {
+function epcEnergyRating(row) {
+  const r = String(
+    row["current-energy-rating"] ??
+      row.currentEnergyRating ??
+      row["current_energy_rating"] ??
+      ""
+  ).trim();
+  return r ? r.toUpperCase() : "";
+}
+
+/** Best EPC search row for a Land Registry address line (floor area + rating when present). */
+function bestEpcMatchForLine(epcRows, lrLine) {
   const line = normAddrMatch(lrLine);
-  if (!line) return 0;
+  if (!line) return { sqm: 0, rating: "" };
   let bestSqm = 0;
-  let bestScore = 0;
+  let bestRating = "";
+  let bestScore = -1;
   for (const row of epcRows) {
-    const sqm = epcFloorSqm(row);
-    if (sqm <= 0) continue;
     const blob = epcAddressBlob(row);
     const nBlob = normAddrMatch(blob);
     let score = tokenScore(lrLine, blob);
     if (nBlob && (nBlob.includes(line) || line.includes(nBlob))) {
       score += 50;
     }
-    if (score > bestScore) {
+    if (score <= 0) continue;
+    const sqm = epcFloorSqm(row);
+    const rating = epcEnergyRating(row);
+    const better =
+      score > bestScore ||
+      (score === bestScore &&
+        (sqm > bestSqm || (sqm === bestSqm && rating && !bestRating)));
+    if (better) {
       bestScore = score;
       bestSqm = sqm;
+      bestRating = rating;
     }
   }
-  return bestSqm;
+  return { sqm: bestSqm, rating: bestRating };
 }
 
 async function fetchEpcRowsForPostcode(postcodeDisplay, env) {
@@ -598,7 +616,7 @@ WHERE {
   FILTER (CONTAINS(lcase(str(?regionName)), lcase("${lit}")))
 }
 ORDER BY DESC(?refMonth)
-LIMIT 48
+LIMIT 300
 `.trim();
 }
 
@@ -636,6 +654,12 @@ async function handlePpiRecent(url, env, origin) {
     const price = Math.round(Number(amountStr)) || 0;
     const ptype = sparqlBindingValue(b, "ptypeLabel");
     const category = sparqlBindingValue(b, "category");
+    const paon = sparqlBindingValue(b, "paon");
+    const saon = sparqlBindingValue(b, "saon");
+    const street = sparqlBindingValue(b, "street");
+    const town = sparqlBindingValue(b, "town");
+    const addrParts = [paon, saon, street, town].filter((x) => x && String(x).trim());
+    const address = addrParts.length ? addrParts.join(", ") : postcodeOut;
     return {
       price,
       amount: price,
@@ -643,21 +667,24 @@ async function handlePpiRecent(url, env, origin) {
       propertyType: ptype || category || "",
       tenure: "",
       postcode: sparqlBindingValue(b, "postcode") || postcodeOut,
-      paon: sparqlBindingValue(b, "paon"),
-      saon: sparqlBindingValue(b, "saon"),
-      street: sparqlBindingValue(b, "street"),
-      town: sparqlBindingValue(b, "town"),
+      address,
+      paon,
+      saon,
+      street,
+      town,
       sqm: 0,
       floorAreaSqm: 0,
+      epcRating: "",
     };
   });
 
   const epcRows = await fetchEpcRowsForPostcode(postcodeOut, env);
   for (const t of transactions) {
     const line = [t.paon, t.saon, t.street, t.town].filter(Boolean).join(" ");
-    const sqm = bestEpcFloorSqmForLine(epcRows, line);
-    t.sqm = sqm;
-    t.floorAreaSqm = sqm;
+    const match = bestEpcMatchForLine(epcRows, line);
+    t.sqm = match.sqm;
+    t.floorAreaSqm = match.sqm;
+    t.epcRating = match.rating;
   }
 
   return json(
@@ -677,8 +704,17 @@ async function handlePpiRecent(url, env, origin) {
 }
 
 async function handleHpi(url, origin) {
-  const la = url.searchParams.get("la") || "";
+  let la = url.searchParams.get("la") || "";
   const month = url.searchParams.get("month") || "";
+  const pcHint = url.searchParams.get("postcode") || "";
+
+  if (!ukhpiLaFilterToken(la) && pcHint) {
+    const geo = await lookupPostcodeGeo(formatPostcode(normalizePostcode(pcHint)));
+    if (geo.ok && geo.localAuthority) {
+      la = geo.localAuthority;
+    }
+  }
+
   const token = ukhpiLaFilterToken(la);
 
   if (!token || token.length < 2) {
@@ -688,7 +724,10 @@ async function handleHpi(url, origin) {
         month: month || null,
         index: null,
         series: [],
-        meta: { note: "Missing local authority name for UKHPI lookup." },
+        meta: {
+          note:
+            "Missing local authority for UKHPI (pass la= or postcode= so we can resolve admin district).",
+        },
       },
       200,
       origin
@@ -749,35 +788,49 @@ async function handleHpi(url, origin) {
     })
     .filter((p) => p.month);
 
-  points.sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : 0));
+  const byMonth = new Map();
+  for (const p of points) {
+    if (p.month && p.value > 0) {
+      byMonth.set(p.month, p.value);
+    }
+  }
+  const monthsAsc = [...byMonth.keys()].sort((a, b) => a.localeCompare(b));
+  const series = monthsAsc.map((m) => ({
+    month: m,
+    value: byMonth.get(m),
+    index: byMonth.get(m),
+  }));
 
   const target = /^\d{4}-\d{2}$/.test(month) ? month : "";
-  let chosen = null;
-  if (target) {
-    const atOrBefore = points.filter((p) => p.month <= target);
-    chosen = atOrBefore.length ? atOrBefore[atOrBefore.length - 1] : null;
+  let chosenMonth = null;
+  let chosenVal = null;
+  if (target && monthsAsc.length) {
+    const atOrBefore = monthsAsc.filter((m) => m <= target);
+    const key = atOrBefore.length ? atOrBefore[atOrBefore.length - 1] : null;
+    if (key) {
+      chosenMonth = key;
+      chosenVal = byMonth.get(key);
+    }
   }
-  if (!chosen && points.length) {
-    chosen = points[points.length - 1];
+  if ((chosenVal == null || chosenVal <= 0) && monthsAsc.length) {
+    const key = monthsAsc[monthsAsc.length - 1];
+    chosenMonth = key;
+    chosenVal = byMonth.get(key);
   }
 
-  const tail = points.slice(-12);
-  const series = tail.map((p) => ({
-    month: p.month,
-    value: p.value,
-    index: p.value,
-  }));
+  const regionLabel = sparqlBindingValue(rows[0], "regionName") || la;
 
   return json(
     {
       la,
-      month: chosen ? chosen.month : month || null,
-      index: chosen && chosen.value > 0 ? chosen.value : null,
+      month: chosenMonth || month || null,
+      index: chosenVal != null && chosenVal > 0 ? chosenVal : null,
       series,
       meta: {
-        note: chosen
-          ? `UKHPI house price index (${sparqlBindingValue(rows[0], "regionName") || la}).`
-          : "UKHPI matched region but index value missing.",
+        note:
+          chosenVal != null && chosenVal > 0
+            ? `UKHPI house price index (${regionLabel}).`
+            : "UKHPI matched region but index value missing.",
         source: "landregistry-ukhpi-sparql",
       },
     },

@@ -20,6 +20,18 @@ export function normalisePpiResponse(raw) {
     const date = formatDateIso(x.date ?? x.transferDate ?? "");
     const sqm = Number(x.sqm ?? x.floorAreaSqm ?? 0) || 0;
     const sqft = Number(x.sqft ?? x.floorAreaSqft ?? 0) || sqmToSqft(sqm);
+    const addrFromParts = [
+      x.paon,
+      x.saon,
+      x.street,
+      x.town,
+    ]
+      .filter((p) => p && String(p).trim())
+      .join(", ");
+    const displayAddress = safeStr(x.address ?? addrFromParts);
+    const epcRating = safeStr(x.epcRating ?? x.epcEnergyRating ?? "")
+      .trim()
+      .toUpperCase();
     return {
       date,
       price,
@@ -30,6 +42,8 @@ export function normalisePpiResponse(raw) {
       pricePerSqm: pricePerSqm(price, sqm),
       pricePerSqft: pricePerSqft(price, sqft),
       postcode: formatPostcode(normalizePostcode(x.postcode ?? postcode)),
+      displayAddress,
+      epcRating,
     };
   });
 

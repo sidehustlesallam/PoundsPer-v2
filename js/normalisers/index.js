@@ -70,7 +70,11 @@ export {
   normaliseEpcCertificateResponse,
 } from "./epc.js";
 export { normalisePpiResponse } from "./ppi.js";
-export { normaliseHpiResponse, adjustPriceForHpi } from "./hpi.js";
+export {
+  normaliseHpiResponse,
+  adjustPriceForHpi,
+  hpiIndexForTransaction,
+} from "./hpi.js";
 export { normaliseSchoolsResponse } from "./schools.js";
 export { normaliseTransportResponse } from "./transport.js";
 export { normaliseBroadbandResponse } from "./broadband.js";

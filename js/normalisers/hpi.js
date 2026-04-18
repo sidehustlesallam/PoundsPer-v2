@@ -30,3 +30,29 @@ export function adjustPriceForHpi(priceGbp, baseIndex, targetIndex) {
   if (p <= 0 || b <= 0 || t <= 0) return p;
   return Math.round((p * t) / b);
 }
+
+/**
+ * UKHPI index value for a transaction completion month (YYYY-MM).
+ * Uses latest series point on or before that month; if the sale predates the series, uses the earliest point.
+ * If the sale month is after all data, uses the latest available index.
+ */
+export function hpiIndexForTransaction(series, saleYyyyMm) {
+  if (!saleYyyyMm || !Array.isArray(series) || !series.length) return null;
+  const pts = series
+    .map((p) => ({
+      month: str(p.month ?? p.period ?? ""),
+      value: toFloat(p.value ?? p.index ?? 0),
+    }))
+    .filter((p) => /^\d{4}-\d{2}$/.test(p.month) && p.value > 0)
+    .sort((a, b) => a.month.localeCompare(b.month));
+  if (!pts.length) return null;
+  const last = pts[pts.length - 1];
+  if (saleYyyyMm > last.month) return last.value;
+  let best = null;
+  for (const p of pts) {
+    if (p.month <= saleYyyyMm) best = p.value;
+    else break;
+  }
+  if (best != null) return best;
+  return pts[0].value;
+}

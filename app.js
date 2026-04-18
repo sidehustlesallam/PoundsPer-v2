@@ -105,7 +105,7 @@ async function loadDatasetForSelection(sel) {
     { key: "geo", run: () => getGeo(postcode) },
     { key: "epcSearch", run: () => searchEpcByPostcode(postcode) },
     { key: "ppi", run: () => getPpiRecent(postcode) },
-    { key: "hpi", run: () => getHpi(la, monthStr) },
+    { key: "hpi", run: () => getHpi(la, monthStr, postcode) },
     { key: "schools", run: () => getSchoolsNearby(postcode) },
     { key: "transport", run: () => getTransport(lat, lon) },
     { key: "broadband", run: () => getBroadband(postcode) },
