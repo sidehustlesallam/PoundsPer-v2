@@ -9,6 +9,7 @@
 const POSTCODES_BASE = "https://api.postcodes.io";
 const EPC_BASE = "https://epc.opendatacommunities.org/api/v1";
 const LR_SPARQL_ENDPOINT = "https://landregistry.data.gov.uk/landregistry/query";
+const OFSTED_REPORTS_BASE = "https://reports.ofsted.gov.uk";
 
 function corsHeaders(origin) {
   return {
@@ -581,7 +582,10 @@ LIMIT 5
 `.trim();
 }
 
-/** UKHPI observations may use refMonth (gYearMonth / URI) or refPeriodStart (xsd:date). */
+/**
+ * UKHPI period key (YYYY-MM): refMonth literal/URI, refPeriodStart (xsd:date),
+ * or observation URI …/month/YYYY-MM (Land Registry pattern).
+ */
 function monthKeyFromUkhpiBinding(b) {
   const rm = sparqlBindingValue(b, "refMonth");
   if (rm) {
@@ -598,9 +602,15 @@ function monthKeyFromUkhpiBinding(b) {
     const m = s.match(/(\d{4}-\d{2})/);
     return m ? m[1] : "";
   }
+  const obs = sparqlBindingValue(b, "obs");
+  if (obs) {
+    const m = String(obs).match(/\/month\/(\d{4}-\d{2})/i);
+    if (m) return m[1];
+  }
   return "";
 }
 
+/** Normalise postcodes.io / EPC admin district strings for UKHPI label CONTAINS. */
 function ukhpiLaFilterToken(la) {
   let s = String(la || "").trim();
   if (!s) return "";
@@ -608,26 +618,41 @@ function ukhpiLaFilterToken(la) {
     /^(city of|london borough of|royal borough of|borough of)\s+/i,
     ""
   );
+  s = s.trim();
+  if (s.includes(",")) {
+    s = s.split(",")[0].trim();
+    s = s.replace(
+      /^(city of|london borough of|royal borough of|borough of)\s+/i,
+      ""
+    );
+  }
   return s.trim();
 }
 
-function buildUkhpiSparql(laFilterToken) {
-  const lit = sparqlStringLiteral(laFilterToken);
+function buildUkhpiRegionNameFilter(laRaw, laPrimary) {
+  const primary = sparqlStringLiteral(laPrimary || "");
+  const raw = sparqlStringLiteral(String(laRaw || "").trim());
+  if (raw && primary && raw !== primary) {
+    return `(CONTAINS(lcase(str(?regionName)), lcase("${primary}")) || CONTAINS(lcase(str(?regionName)), lcase("${raw}")))`;
+  }
+  return `CONTAINS(lcase(str(?regionName)), lcase("${primary}"))`;
+}
+
+function buildUkhpiSparql(laRaw, laPrimary) {
+  const regionFilter = buildUkhpiRegionNameFilter(laRaw, laPrimary);
   return `
 PREFIX ukhpi: <http://landregistry.data.gov.uk/def/ukhpi/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT ?region ?refMonth ?refPeriodStart ?ukhpi ?volume ?regionName
+SELECT ?obs ?region ?refMonth ?refPeriodStart ?hpiVal ?volume ?regionName
 WHERE {
   ?obs ukhpi:refRegion ?region ;
-       ukhpi:housePriceIndex ?ukhpi .
+       ukhpi:housePriceIndex ?hpiVal .
   OPTIONAL { ?obs ukhpi:refMonth ?refMonth }
   OPTIONAL { ?obs ukhpi:refPeriodStart ?refPeriodStart }
-  FILTER ( bound(?refMonth) || bound(?refPeriodStart) )
   OPTIONAL { ?obs ukhpi:salesVolume ?volume }
   ?region rdfs:label ?regionName .
-  FILTER (lang(?regionName) = "" || langMatches(lang(?regionName), "en"))
-  FILTER (CONTAINS(lcase(str(?regionName)), lcase("${lit}")))
+  FILTER ( ${regionFilter} )
 }
 LIMIT 500
 `.trim();
@@ -747,7 +772,7 @@ async function handleHpi(url, origin) {
     );
   }
 
-  const query = buildUkhpiSparql(token);
+  const query = buildUkhpiSparql(la, token);
   const { res, parsed } = await landRegistrySparql(query);
 
   if (!res.ok || !parsed || !parsed.results || !Array.isArray(parsed.results.bindings)) {
@@ -775,23 +800,38 @@ async function handleHpi(url, origin) {
         month: month || null,
         index: null,
         series: [],
-        meta: { note: "No UKHPI rows matched this local authority label." },
+        meta: {
+          note: `No UKHPI rows matched admin district "${token}" (try another postcode or check Land Registry labels).`,
+        },
       },
       200,
       origin
     );
   }
 
-  const region0 = sparqlBindingValue(rows[0], "region");
-  if (region0) {
-    rows = rows.filter((b) => sparqlBindingValue(b, "region") === region0);
+  const regionCounts = new Map();
+  for (const b of rows) {
+    const ru = sparqlBindingValue(b, "region");
+    if (!ru) continue;
+    regionCounts.set(ru, (regionCounts.get(ru) || 0) + 1);
+  }
+  let dominantRegion = "";
+  let bestCount = 0;
+  for (const [ru, c] of regionCounts) {
+    if (c > bestCount) {
+      dominantRegion = ru;
+      bestCount = c;
+    }
+  }
+  if (dominantRegion) {
+    rows = rows.filter((b) => sparqlBindingValue(b, "region") === dominantRegion);
   }
 
   const points = rows
     .map((b) => {
       const mk = monthKeyFromUkhpiBinding(b);
-      const ukhpiStr = sparqlBindingValue(b, "ukhpi");
-      const val = parseFloat(ukhpiStr);
+      const hpiStr = sparqlBindingValue(b, "hpiVal");
+      const val = parseFloat(hpiStr);
       return {
         month: mk,
         value: Number.isFinite(val) ? val : 0,
@@ -852,6 +892,81 @@ async function handleHpi(url, origin) {
   );
 }
 
+function decodeHtmlEntities(s) {
+  return String(s || "")
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) =>
+      String.fromCharCode(parseInt(h, 16))
+    )
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+function milesTextToMetres(text) {
+  const m = String(text).match(/([\d.]+)\s*miles?/i);
+  if (!m) return 0;
+  const miles = parseFloat(m[1]);
+  return Number.isFinite(miles) && miles >= 0
+    ? Math.round(miles * 1609.344)
+    : 0;
+}
+
+/**
+ * Parse Ofsted "Find an inspection report" HTML (results list).
+ * Matches markup from reports.ofsted.gov.uk search (class names may change).
+ */
+function parseOfstedSearchResults(html) {
+  const itemRe =
+    /<h3 class="search-result__title[^"]*"[^>]*>\s*<a href="([^"]*)"[^>]*>([^<]*)<\/a>\s*<\/h3>\s*<ul class="search-result__provider-info">\s*<li>\s*Category:\s*<strong>([^<]*)<\/strong>\s*<\/li>\s*<\/ul>\s*<address class="search-result__address">\s*([^<]*?)\s*<\/address>\s*<strong class="address-distance">\s*([^<]*?)\s*<\/strong>\s*(?:<ul class="search-result__provider-info">\s*<li>\s*Rating:\s*<strong>([^<]*)<\/strong>\s*<\/li>\s*<\/ul>\s*)?\s*<ul class="search-result__provider-info">\s*<li>\s*Latest report:\s*<strong>\s*<time>([^<]*)<\/time>\s*<\/strong>\s*<\/li>\s*<li>\s*URN:\s*<strong>([^<]*)<\/strong>\s*<\/li>\s*<\/ul>/gi;
+
+  const schools = [];
+  let m;
+  while ((m = itemRe.exec(html)) !== null) {
+    const href = decodeHtmlEntities(m[1]).trim();
+    const name = decodeHtmlEntities(m[2]).trim();
+    const category = decodeHtmlEntities(m[3]).trim();
+    const address = decodeHtmlEntities(m[4]).trim();
+    const distText = decodeHtmlEntities(m[5]).trim();
+    const rating = m[6] ? decodeHtmlEntities(m[6]).trim() : "";
+    const lastReport = decodeHtmlEntities(m[7]).trim();
+    const urn = decodeHtmlEntities(m[8]).trim();
+    const path = href.startsWith("http") ? href : `${OFSTED_REPORTS_BASE}${href}`;
+    schools.push({
+      name,
+      phase: category,
+      type: "Ofsted",
+      distanceMetres: milesTextToMetres(distText),
+      ofstedRating: rating,
+      address,
+      urn,
+      lastReport,
+      reportUrl: path,
+    });
+  }
+  return schools;
+}
+
+function buildOfstedSearchUrl(postcodeFormatted) {
+  const p = new URLSearchParams();
+  p.set("q", "");
+  p.set("location", postcodeFormatted);
+  p.set("lat", "");
+  p.set("lon", "");
+  p.set("radius", "");
+  p.set("level_1_types", "2");
+  p.set("level_2_types", "7");
+  p.set("latest_report_date_start", "");
+  p.set("latest_report_date_end", "");
+  p.append("status[]", "1");
+  p.set("start", "0");
+  p.set("rows", "15");
+  return `${OFSTED_REPORTS_BASE}/search?${p.toString()}`;
+}
+
 async function handleSchoolsNearby(url, origin) {
   const postcode = url.searchParams.get("postcode") || "";
   const pc = normalizePostcode(postcode);
@@ -859,20 +974,57 @@ async function handleSchoolsNearby(url, origin) {
     return json({ schools: [], error: "Missing postcode" }, 400, origin);
   }
 
-  const { body } = await fetchJson(
-    `${POSTCODES_BASE}/postcodes/${encodeURIComponent(formatPostcode(pc))}`
+  const pcOut = formatPostcode(pc);
+  const { res: pcRes, body } = await fetchJson(
+    `${POSTCODES_BASE}/postcodes/${encodeURIComponent(pcOut)}`
   );
   const r = body.result || body;
-  const lat = r.latitude;
-  const lon = r.longitude;
+  const lat = pcRes.ok ? r.latitude : undefined;
+  const lon = pcRes.ok ? r.longitude : undefined;
+
+  let schools = [];
+  let ofstedNote = "";
+  try {
+    const ofstedUrl = buildOfstedSearchUrl(pcOut);
+    const oRes = await fetch(ofstedUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; PoundsPerWorker/1.0; residential-property-dashboard)",
+        Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-GB,en;q=0.9",
+      },
+    });
+    if (!oRes.ok) {
+      ofstedNote = `Ofsted search returned HTTP ${oRes.status}.`;
+    } else {
+      const html = await oRes.text();
+      schools = parseOfstedSearchResults(html);
+      if (!schools.length && html.includes("search-result")) {
+        ofstedNote =
+          "Ofsted HTML was fetched but no listings matched the parser (markup may have changed).";
+      } else if (!schools.length) {
+        ofstedNote =
+          "No Ofsted results block found in the response (blocked, cookie wall, or layout change).";
+      }
+    }
+  } catch (e) {
+    ofstedNote = e.message || "Ofsted fetch failed";
+  }
 
   return json(
     {
-      schools: [],
-      postcode: formatPostcode(pc),
+      schools,
+      postcode: pcOut,
       lat,
       lon,
-      meta: { note: "DfE / Edubase proximity search can be added here" },
+      meta: {
+        note:
+          ofstedNote ||
+          (schools.length
+            ? "Nearest open providers from Ofsted search (childcare → nursery school / school with nursery), by postcode."
+            : "No schools parsed from Ofsted for this postcode."),
+        source: "reports.ofsted.gov.uk",
+      },
     },
     200,
     origin

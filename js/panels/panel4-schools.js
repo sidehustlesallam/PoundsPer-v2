@@ -17,20 +17,27 @@ export function renderPanelSchools(state) {
 
   const sch = state.normalised?.schools || {};
   const list = sch.schools || [];
-  const rows = list.slice(0, 10).map(
-    (s) => `
+  const rows = list.slice(0, 10).map((s) => {
+    const ofsted = s.ofsted ? escapeHtml(s.ofsted) : "—";
+    const report = s.lastReport ? escapeHtml(s.lastReport) : "—";
+    const nameCell = s.reportUrl
+      ? `<a class="text-[#60A5FA] hover:underline" href="${escapeHtml(s.reportUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(s.name)}</a>`
+      : escapeHtml(s.name);
+    return `
     <tr class="border-b border-[#1F242D]">
-      <td class="py-2 pr-2 text-xs text-[#C7CBD4]">${escapeHtml(s.name)}</td>
+      <td class="py-2 pr-2 text-xs text-[#C7CBD4]">${nameCell}</td>
       <td class="py-2 pr-2 text-xs text-[#8E95A3]">${escapeHtml(s.phase)}</td>
-      <td class="py-2 font-mono text-xs text-[#4ADE80]">${formatNumber(s.distanceMiles, 2)} mi</td>
-    </tr>`
-  );
+      <td class="py-2 pr-2 font-mono text-xs text-[#FACC15]">${ofsted}</td>
+      <td class="py-2 pr-2 font-mono text-xs text-[#4ADE80]">${formatNumber(s.distanceMiles, 2)} mi</td>
+      <td class="py-2 text-xs text-[#8E95A3]">${report}</td>
+    </tr>`;
+  });
 
   root.innerHTML = `
     <div class="overflow-x-auto">
-      <table class="w-full text-left text-xs">
-        <thead><tr class="text-[#8E95A3]"><th class="pb-2">School</th><th class="pb-2">Phase</th><th class="pb-2">Dist</th></tr></thead>
-        <tbody>${rows.length ? rows.join("") : `<tr><td colspan="3" class="text-[#8E95A3] py-2">No schools returned.</td></tr>`}</tbody>
+      <table class="w-full text-left text-xs min-w-[420px]">
+        <thead><tr class="text-[#8E95A3]"><th class="pb-2">School</th><th class="pb-2">Category</th><th class="pb-2">Ofsted</th><th class="pb-2">Dist</th><th class="pb-2">Last report</th></tr></thead>
+        <tbody>${rows.length ? rows.join("") : `<tr><td colspan="5" class="text-[#8E95A3] py-2">No schools returned.</td></tr>`}</tbody>
       </table>
     </div>
     <p class="text-xs text-[#8E95A3] mt-2">${escapeHtml(sch.meta?.note || "")}</p>

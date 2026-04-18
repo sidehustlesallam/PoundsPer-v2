@@ -21,6 +21,10 @@ export function normaliseSchoolsResponse(raw) {
         type: safeStr(x.type ?? x.establishmentType ?? ""),
         distanceMiles: distM > 0 ? metresToMiles(distM) : toMilesFromKm(x.distanceKm),
         ofsted: safeStr(x.ofstedRating ?? x.ofsted ?? ""),
+        address: safeStr(x.address ?? ""),
+        urn: safeStr(x.urn ?? ""),
+        lastReport: safeStr(x.lastReport ?? ""),
+        reportUrl: safeStr(x.reportUrl ?? ""),
       };
     }),
     meta: o.meta && typeof o.meta === "object" ? o.meta : {},
