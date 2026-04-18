@@ -950,20 +950,31 @@ function parseOfstedSearchResults(html) {
   return schools;
 }
 
-function buildOfstedSearchUrl(postcodeFormatted) {
+const OFSTED_RADIUS_MILES = 2;
+const OFSTED_MAX_RESULTS = 10;
+const OFSTED_RADIUS_METRES = Math.round(OFSTED_RADIUS_MILES * 1609.344);
+
+function buildOfstedSearchUrl(postcodeFormatted, lat, lon) {
   const p = new URLSearchParams();
   p.set("q", "");
   p.set("location", postcodeFormatted);
-  p.set("lat", "");
-  p.set("lon", "");
-  p.set("radius", "");
+  const la = lat != null ? Number(lat) : NaN;
+  const lo = lon != null ? Number(lon) : NaN;
+  if (Number.isFinite(la) && Number.isFinite(lo)) {
+    p.set("lat", String(la));
+    p.set("lon", String(lo));
+  } else {
+    p.set("lat", "");
+    p.set("lon", "");
+  }
+  p.set("radius", String(OFSTED_RADIUS_MILES));
   p.set("level_1_types", "2");
   p.set("level_2_types", "7");
   p.set("latest_report_date_start", "");
   p.set("latest_report_date_end", "");
   p.append("status[]", "1");
   p.set("start", "0");
-  p.set("rows", "15");
+  p.set("rows", String(OFSTED_MAX_RESULTS));
   return `${OFSTED_REPORTS_BASE}/search?${p.toString()}`;
 }
 
@@ -985,7 +996,7 @@ async function handleSchoolsNearby(url, origin) {
   let schools = [];
   let ofstedNote = "";
   try {
-    const ofstedUrl = buildOfstedSearchUrl(pcOut);
+    const ofstedUrl = buildOfstedSearchUrl(pcOut, lat, lon);
     const oRes = await fetch(ofstedUrl, {
       headers: {
         "User-Agent":
@@ -998,7 +1009,13 @@ async function handleSchoolsNearby(url, origin) {
       ofstedNote = `Ofsted search returned HTTP ${oRes.status}.`;
     } else {
       const html = await oRes.text();
-      schools = parseOfstedSearchResults(html);
+      schools = parseOfstedSearchResults(html)
+        .filter((s) => {
+          const d = Number(s.distanceMetres) || 0;
+          if (d <= 0) return true;
+          return d <= OFSTED_RADIUS_METRES;
+        })
+        .slice(0, OFSTED_MAX_RESULTS);
       if (!schools.length && html.includes("search-result")) {
         ofstedNote =
           "Ofsted HTML was fetched but no listings matched the parser (markup may have changed).";
@@ -1021,7 +1038,7 @@ async function handleSchoolsNearby(url, origin) {
         note:
           ofstedNote ||
           (schools.length
-            ? "Nearest open providers from Ofsted search (childcare → nursery school / school with nursery), by postcode."
+            ? `Nearest open providers (Ofsted): childcare → nursery school / school with nursery, within ~${OFSTED_RADIUS_MILES} miles of the postcode (up to ${OFSTED_MAX_RESULTS} shown).`
             : "No schools parsed from Ofsted for this postcode."),
         source: "reports.ofsted.gov.uk",
       },
