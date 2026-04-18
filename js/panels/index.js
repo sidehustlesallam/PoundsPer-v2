@@ -5,6 +5,7 @@ import { renderPanelSchools } from "./panel4-schools.js";
 import { renderPanelTransport } from "./panel5-transport.js";
 import { renderPanelUtilities } from "./panel6-utilities.js";
 import { renderPanelRisk } from "./panel7-risk.js";
+import { renderFooterContext } from "./footer-context.js";
 
 export function renderAllPanels(state) {
   renderPanelIdentity(state);
@@ -14,6 +15,7 @@ export function renderAllPanels(state) {
   renderPanelTransport(state);
   renderPanelUtilities(state);
   renderPanelRisk(state);
+  renderFooterContext(state);
 }
 
 export {

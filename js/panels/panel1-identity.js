@@ -71,7 +71,6 @@ export function renderPanelIdentity(state) {
         : "—"
     )
   );
-  rows.push(row("Tenure", escapeHtml(matched?.tenure || "—")));
   rows.push(
     row(
       "Date of EPC certificate",

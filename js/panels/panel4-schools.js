@@ -40,7 +40,6 @@ export function renderPanelSchools(state) {
         <tbody>${rows.length ? rows.join("") : `<tr><td colspan="5" class="text-[#8E95A3] py-2">No schools returned.</td></tr>`}</tbody>
       </table>
     </div>
-    <p class="text-xs text-[#8E95A3] mt-2">${escapeHtml(sch.meta?.note || "")}</p>
   `;
 }
 

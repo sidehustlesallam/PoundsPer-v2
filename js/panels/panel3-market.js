@@ -154,49 +154,29 @@ export function renderPanelMarket(state) {
       <td class="py-2 font-mono text-[10px] sm:text-xs text-[#60A5FA]">${av.avgHpiAdjPerSqft != null && av.avgHpiAdjPerSqft > 0 ? formatGbpPerSqft(av.avgHpiAdjPerSqft) : "—"}</td>
     </tr>`;
 
-  const hpiIdx =
-    hpi.index != null && hpi.index !== undefined && toFloat(hpi.index) > 0
-      ? formatNumber(toFloat(hpi.index), 2)
-      : "—";
-
-  const hpiMonth = escapeHtml(hpi.month || "");
-  const hasSeries = Array.isArray(hpi.series) && hpi.series.length > 0;
-  const hpiExplain = hasSeries
-    ? `HPI-adjusted price revalues each sale to the reference period using UKHPI: sale price × (reference index ÷ index for the sale’s calendar month). Adjusted £/ft² is that figure divided by floor area when ft² is known. Reference index (${hpiMonth || "n/a"}): ${hpiIdx}.`
-    : `No UKHPI series loaded for this area — check worker /hpi (local authority or postcode). Adjusted columns need index values by month.`;
-
   root.innerHTML = `
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div>
-        <h4 class="text-xs uppercase tracking-wide text-[#8E95A3] mb-2">Recent transactions (PPD)</h4>
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-[10px] sm:text-xs min-w-[720px]">
-            <thead>
-              <tr class="text-[#8E95A3]">
-                <th class="pb-2 pr-2 font-normal">Date</th>
-                <th class="pb-2 pr-2 font-normal">Address</th>
-                <th class="pb-2 pr-2 font-normal text-right">ft²</th>
-                <th class="pb-2 pr-2 font-normal text-center">EPC</th>
-                <th class="pb-2 pr-2 font-normal">Price</th>
-                <th class="pb-2 pr-2 font-normal">£/ft²</th>
-                <th class="pb-2 pr-2 font-normal">HPI adj. £</th>
-                <th class="pb-2 font-normal">HPI adj. £/ft²</th>
-              </tr>
-            </thead>
-            <tbody>${
-              rows.length
-                ? `${rows.join("")}${avgRow}`
-                : `<tr><td colspan="${COLS}" class="text-[#8E95A3] py-2">No transactions returned.</td></tr>`
-            }</tbody>
-          </table>
-        </div>
-      </div>
-      <div>
-        <h4 class="text-xs uppercase tracking-wide text-[#8E95A3] mb-2">HPI context</h4>
-        <p class="font-mono text-sm text-[#C7CBD4]">Reference index (${hpiMonth || "—"}): <span class="text-[#60A5FA]">${hpiIdx}</span></p>
-        <p class="text-xs text-[#8E95A3] mt-2 leading-relaxed">${hpiExplain}</p>
-        <p class="text-xs text-[#8E95A3] mt-2">${escapeHtml(hpi.meta?.note || "")}</p>
-        <p class="text-xs text-[#8E95A3] mt-1">${escapeHtml(ppi.meta?.note || "")}</p>
+    <div>
+      <h4 class="text-xs uppercase tracking-wide text-[#8E95A3] mb-2">Recent transactions (PPD)</h4>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-[10px] sm:text-xs min-w-[720px]">
+          <thead>
+            <tr class="text-[#8E95A3]">
+              <th class="pb-2 pr-2 font-normal">Date</th>
+              <th class="pb-2 pr-2 font-normal">Address</th>
+              <th class="pb-2 pr-2 font-normal text-right">ft²</th>
+              <th class="pb-2 pr-2 font-normal text-center">EPC</th>
+              <th class="pb-2 pr-2 font-normal">Price</th>
+              <th class="pb-2 pr-2 font-normal">£/ft²</th>
+              <th class="pb-2 pr-2 font-normal">HPI adj. £</th>
+              <th class="pb-2 font-normal">HPI adj. £/ft²</th>
+            </tr>
+          </thead>
+          <tbody>${
+            rows.length
+              ? `${rows.join("")}${avgRow}`
+              : `<tr><td colspan="${COLS}" class="text-[#8E95A3] py-2">No transactions returned.</td></tr>`
+          }</tbody>
+        </table>
       </div>
     </div>
   `;

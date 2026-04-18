@@ -167,7 +167,8 @@ async function lookupPostcodeGeo(pcFormatted) {
     postcode: r.postcode || pcFormatted,
     lat: r.latitude,
     lon: r.longitude,
-    localAuthority: r.codes?.admin_district || r.admin_district || "",
+    // Human name (e.g. "Westminster") for UKHPI label CONTAINS; codes.admin_district is ONS code (e.g. E09000033).
+    localAuthority: r.admin_district || r.codes?.admin_district || "",
     region: r.region || "",
     country: r.country || "",
     parliamentary_constituency: r.parliamentary_constituency || "",
@@ -447,7 +448,8 @@ async function handleGeo(url, origin) {
         postcode: r.postcode,
         lat: r.latitude,
         lon: r.longitude,
-        localAuthority: r.codes?.admin_district || r.admin_district || "",
+        // Human name (e.g. "Westminster") for UKHPI label CONTAINS; codes.admin_district is ONS code (e.g. E09000033).
+        localAuthority: r.admin_district || r.codes?.admin_district || "",
       },
     },
     200,

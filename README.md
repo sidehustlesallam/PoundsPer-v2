@@ -2,7 +2,7 @@
 
 A forensic, panel-driven UK property dashboard: **postcode** or **UPRN** search, EPC-led identity, Land Registry recent sales, optional UKHPI context, Ofsted nearby providers (scraped), map, and placeholder modules for transport, utilities, and risk.
 
-**Resume work:** read [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for the authoritative file map, secrets, route behaviour, and known caveats (map DOM, Ofsted HTML, HPI).
+**Resume work:** read [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for the authoritative file map, secrets, route behaviour, and known caveats (map DOM, Ofsted HTML, UKHPI LA naming).
 
 ---
 
@@ -25,7 +25,7 @@ https://royal-bar-6cc5.sidehustlesallam.workers.dev
 3. User selects an address.
 4. **`loadDatasetForSelection()`** in `app.js` fetches in parallel: geo, EPC search, PPI, HPI, schools, transport, broadband, flood, radon; then EPC certificate and `/address` when applicable.
 5. Responses are **normalised** under `js/normalisers/` into `state.normalised`.
-6. **`renderAllPanels(state)`** paints all panels.
+6. **`renderAllPanels(state)`** paints all panels, then **`renderFooterContext(state)`** (`js/panels/footer-context.js`) fills the **Notes & data context** block at the bottom of the page (tenure note + value, HPI/PPD references, Ofsted search notes) so main panels stay data-focused.
 
 **Not implemented:** Zoopla URL parsing on `/resolve` (README historically mentioned it; treat as future scope).
 
@@ -35,10 +35,10 @@ https://royal-bar-6cc5.sidehustlesallam.workers.dev
 
 | Row | Panels |
 |-----|--------|
-| 1 | **Registered Asset** (`panel-identity`) — EPC-led identity: postcode, UPRN, ratings, **floor area m² + ft²**, **Date of EPC certificate** (inspection date if present, else lodgement), £/m² if transaction price exists, tenure |
+| 1 | **Registered Asset** (`panel-identity`) — EPC-led identity: postcode, UPRN, ratings, **floor area m² + ft²**, **Date of EPC certificate** (inspection date if present, else lodgement), £/m² if transaction price exists (tenure value + EPC tenure copy: **footer** / `footer-context.js`) |
 | 1 | **Map** (`panel-map`) — Leaflet + OSM; must preserve `#leaflet-map` across re-renders (see `panel2-map.js`) |
-| 2 | **Market** (`panel-market`) — Last **5** PPD sales (Land Registry SPARQL), address, ft², EPC rating, price, £/ft², HPI-adjusted £ / £/ft² when UKHPI series is available, market averages |
-| 3 | **Schools** (`panel-schools`) — Ofsted search results (name link, category, rating, distance, last report) |
+| 2 | **Market** (`panel-market`) — Last **5** PPD sales (Land Registry SPARQL), address, ft², EPC rating, price, £/ft², HPI-adjusted £ / £/ft² when UKHPI series is available, market averages (HPI/PPD methodology + `meta.note` text: **footer** / `footer-context.js`) |
+| 3 | **Schools** (`panel-schools`) — Ofsted search results (name link, category, rating, distance, last report; Ofsted `meta.note`: **footer** / `footer-context.js`) |
 | 3 | **Transport** (`panel-transport`) — placeholder |
 | 4 | **Utilities** (`panel-utilities`) — placeholder |
 | 4 | **Risk** (`panel-risk`) — placeholder |
@@ -57,7 +57,7 @@ Base URL = Worker origin (`API_BASE` on the client).
 | `/epc/search?postcode=` \| `uprn=` | EPC domestic search |
 | `/epc/certificate?rrn=` | EPC certificate; `rrn` = **lmk-key** |
 | `/ppi/recent?postcode=` | PPD via SPARQL + optional EPC floor/rating match |
-| `/hpi?la=&month=&postcode=` | UKHPI SPARQL; `postcode` helps resolve LA when `la` is empty |
+| `/hpi?la=&month=&postcode=` | UKHPI SPARQL; `postcode` helps resolve LA when `la` is empty. `la` should be a **district name** (e.g. Westminster), not an ONS code — see [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (Land Registry / postcodes.io). |
 | `/schools/nearby?postcode=` | Ofsted HTML scrape near postcode (2 mi, 10 results) |
 | `/transport?lat=&lon=` | Placeholder |
 | `/broadband?postcode=` | Placeholder |
@@ -74,6 +74,7 @@ Each module has a normaliser. Rules include:
 - **PPI:** Integer prices, ISO dates, £/m² and £/ft² from area.
 - **Schools:** Miles from metres; Ofsted strings passed through.
 - **Geo / resolve / others:** See individual files under `js/normalisers/`.
+- **HPI:** `hpi.js` maps worker `series` + `index` to month keys (`YYYY-MM`) and drives HPI-adjusted £ / £/ft² in the market panel; empty series almost always means the worker could not match the local authority name to UKHPI (see DEVELOPMENT.md).
 
 ---
 
@@ -84,13 +85,13 @@ js/
   state/       # global state
   api/         # Worker calls (resolve.js holds API_BASE)
   normalisers/
-  panels/
+  panels/      # panel1–7 + footer-context.js (long-form context for footer)
   utils/
 app.js
-index.html
+index.html     # header (search) scrolls; sticky strip = address select only; main panels; footer = Notes & data context
 ```
 
-`app.js` orchestrates resolve, selection, fetches, normalisation, and `renderAllPanels`.
+`app.js` orchestrates resolve, selection, fetches, normalisation, and `renderAllPanels` (including footer context).
 
 ---
 
