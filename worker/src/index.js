@@ -8,6 +8,7 @@
 
 const POSTCODES_BASE = "https://api.postcodes.io";
 const EPC_BASE = "https://epc.opendatacommunities.org/api/v1";
+const LR_SPARQL_ENDPOINT = "https://landregistry.data.gov.uk/landregistry/query";
 
 function corsHeaders(origin) {
   return {
@@ -118,7 +119,7 @@ export default {
         return handleEpcCertificate(url, env, origin);
       }
       if (path === "/ppi/recent") {
-        return handlePpiRecent(url, origin);
+        return handlePpiRecent(url, env, origin);
       }
       if (path === "/hpi") {
         return handleHpi(url, origin);
@@ -414,20 +415,260 @@ async function handleEpcCertificate(url, env, origin) {
   return json(body, 200, origin);
 }
 
-/** Land Registry PPD — recent transactions near postcode (simplified: postcode sector match via SPARQL is heavy; return structured empty + meta). */
-async function handlePpiRecent(url, origin) {
+function sparqlStringLiteral(s) {
+  return String(s || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+}
+
+async function landRegistrySparql(query) {
+  const body = new URLSearchParams();
+  body.set("query", query);
+  const res = await fetch(LR_SPARQL_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Accept: "application/sparql-results+json",
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+    },
+    body: body.toString(),
+  });
+  const text = await res.text();
+  let parsed = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = null;
+  }
+  return { res, parsed, text };
+}
+
+function sparqlBindingValue(binding, name) {
+  const cell = binding[name];
+  if (!cell || typeof cell !== "object") return "";
+  if (cell.value != null && cell.value !== undefined) return String(cell.value);
+  return "";
+}
+
+function normAddrMatch(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function tokenScore(a, b) {
+  const ta = normAddrMatch(a)
+    .split(/\s+/)
+    .filter((w) => w.length > 1);
+  const tb = new Set(
+    normAddrMatch(b)
+      .split(/\s+/)
+      .filter((w) => w.length > 1)
+  );
+  if (!ta.length || !tb.size) return 0;
+  let score = 0;
+  for (const t of ta) {
+    if (tb.has(t)) score += t.length;
+  }
+  return score;
+}
+
+function epcAddressBlob(row) {
+  const a1 =
+    row.address1 ||
+    row["address-line-1"] ||
+    row["address_line_1"] ||
+    "";
+  const a2 =
+    row.address2 || row["address-line-2"] || row["address_line_2"] || "";
+  const a3 =
+    row.address3 || row["address-line-3"] || row["address_line_3"] || "";
+  return [a1, a2, a3].filter((x) => x && String(x).trim()).join(" ");
+}
+
+function epcFloorSqm(row) {
+  const raw =
+    row["total-floor-area"] ??
+    row.totalFloorArea ??
+    row["total_floor_area"] ??
+    "";
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function bestEpcFloorSqmForLine(epcRows, lrLine) {
+  const line = normAddrMatch(lrLine);
+  if (!line) return 0;
+  let bestSqm = 0;
+  let bestScore = 0;
+  for (const row of epcRows) {
+    const sqm = epcFloorSqm(row);
+    if (sqm <= 0) continue;
+    const blob = epcAddressBlob(row);
+    const nBlob = normAddrMatch(blob);
+    let score = tokenScore(lrLine, blob);
+    if (nBlob && (nBlob.includes(line) || line.includes(nBlob))) {
+      score += 50;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestSqm = sqm;
+    }
+  }
+  return bestSqm;
+}
+
+async function fetchEpcRowsForPostcode(postcodeDisplay, env) {
+  const headers = epcAuthHeaders(env);
+  if (!headers) return [];
+  const q = new URLSearchParams({
+    postcode: postcodeDisplay,
+    size: "500",
+  });
+  const { res, body } = await fetchJson(
+    `${EPC_BASE}/domestic/search?${q.toString()}`,
+    { headers }
+  );
+  if (!res.ok || !body || !Array.isArray(body.rows)) return [];
+  return body.rows;
+}
+
+function buildPpdRecentSparql(postcodeFormatted) {
+  const lit = sparqlStringLiteral(postcodeFormatted);
+  return `
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX lrppi: <http://landregistry.data.gov.uk/def/ppi/>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX lrcommon: <http://landregistry.data.gov.uk/def/common/>
+
+SELECT ?paon ?saon ?street ?town ?postcode ?amount ?date ?category ?ptypeLabel
+WHERE {
+  VALUES ?postcode { "${lit}"^^xsd:string }
+
+  ?addr lrcommon:postcode ?postcode .
+
+  ?transx lrppi:propertyAddress ?addr ;
+          lrppi:pricePaid ?amount ;
+          lrppi:transactionDate ?date ;
+          lrppi:transactionCategory/skos:prefLabel ?category .
+  OPTIONAL { ?transx lrppi:propertyType/skos:prefLabel ?ptypeLabel . }
+  OPTIONAL { ?addr lrcommon:paon ?paon }
+  OPTIONAL { ?addr lrcommon:saon ?saon }
+  OPTIONAL { ?addr lrcommon:street ?street }
+  OPTIONAL { ?addr lrcommon:town ?town }
+}
+ORDER BY DESC(?date)
+LIMIT 5
+`.trim();
+}
+
+function monthKeyFromRefMonthBinding(b) {
+  const v = sparqlBindingValue(b, "refMonth");
+  if (!v) return "";
+  if (/^\d{4}-\d{2}$/.test(v)) return v;
+  const m = String(v).match(/(\d{4}-\d{2})/);
+  return m ? m[1] : v.slice(0, 7);
+}
+
+function ukhpiLaFilterToken(la) {
+  let s = String(la || "").trim();
+  if (!s) return "";
+  s = s.replace(
+    /^(city of|london borough of|royal borough of|borough of)\s+/i,
+    ""
+  );
+  return s.trim();
+}
+
+function buildUkhpiSparql(laFilterToken) {
+  const lit = sparqlStringLiteral(laFilterToken);
+  return `
+PREFIX ukhpi: <http://landregistry.data.gov.uk/def/ukhpi/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?region ?refMonth ?ukhpi ?volume ?regionName
+WHERE {
+  ?obs ukhpi:refRegion ?region ;
+       ukhpi:refMonth ?refMonth ;
+       ukhpi:housePriceIndex ?ukhpi .
+  OPTIONAL { ?obs ukhpi:salesVolume ?volume }
+  ?region rdfs:label ?regionName .
+  FILTER (lang(?regionName) = "" || langMatches(lang(?regionName), "en"))
+  FILTER (CONTAINS(lcase(str(?regionName)), lcase("${lit}")))
+}
+ORDER BY DESC(?refMonth)
+LIMIT 48
+`.trim();
+}
+
+/** Land Registry PPD via SPARQL; optional EPC domestic search for floor area when worker has EPC auth. */
+async function handlePpiRecent(url, env, origin) {
   const postcode = url.searchParams.get("postcode") || "";
   const pc = normalizePostcode(postcode);
   if (!pc) {
     return json({ transactions: [], error: "Missing postcode" }, 400, origin);
   }
 
+  const postcodeOut = formatPostcode(pc);
+  const query = buildPpdRecentSparql(postcodeOut);
+  const { res, parsed } = await landRegistrySparql(query);
+
+  if (!res.ok || !parsed || !parsed.results || !Array.isArray(parsed.results.bindings)) {
+    return json(
+      {
+        transactions: [],
+        postcode: postcodeOut,
+        meta: {
+          note: "Land Registry SPARQL did not return JSON results.",
+          status: res.status,
+        },
+      },
+      200,
+      origin
+    );
+  }
+
+  const bindings = parsed.results.bindings;
+  const transactions = bindings.map((b) => {
+    const amountStr = sparqlBindingValue(b, "amount");
+    const dateStr = sparqlBindingValue(b, "date");
+    const price = Math.round(Number(amountStr)) || 0;
+    const ptype = sparqlBindingValue(b, "ptypeLabel");
+    const category = sparqlBindingValue(b, "category");
+    return {
+      price,
+      amount: price,
+      date: dateStr ? dateStr.slice(0, 10) : "",
+      propertyType: ptype || category || "",
+      tenure: "",
+      postcode: sparqlBindingValue(b, "postcode") || postcodeOut,
+      paon: sparqlBindingValue(b, "paon"),
+      saon: sparqlBindingValue(b, "saon"),
+      street: sparqlBindingValue(b, "street"),
+      town: sparqlBindingValue(b, "town"),
+      sqm: 0,
+      floorAreaSqm: 0,
+    };
+  });
+
+  const epcRows = await fetchEpcRowsForPostcode(postcodeOut, env);
+  for (const t of transactions) {
+    const line = [t.paon, t.saon, t.street, t.town].filter(Boolean).join(" ");
+    const sqm = bestEpcFloorSqmForLine(epcRows, line);
+    t.sqm = sqm;
+    t.floorAreaSqm = sqm;
+  }
+
   return json(
     {
-      transactions: [],
-      postcode: formatPostcode(pc),
+      transactions,
+      postcode: postcodeOut,
       meta: {
-        note: "PPD integration can be wired to landregistry.data.gov.uk SPARQL",
+        note: epcRows.length
+          ? "PPD from Land Registry SPARQL; floor area matched from EPC domestic search where possible."
+          : "PPD from Land Registry SPARQL; set EPC_EMAIL + EPC_API_KEY to enrich with EPC floor areas.",
+        source: "landregistry-sparql",
       },
     },
     200,
@@ -438,14 +679,106 @@ async function handlePpiRecent(url, origin) {
 async function handleHpi(url, origin) {
   const la = url.searchParams.get("la") || "";
   const month = url.searchParams.get("month") || "";
+  const token = ukhpiLaFilterToken(la);
+
+  if (!token || token.length < 2) {
+    return json(
+      {
+        la: la || null,
+        month: month || null,
+        index: null,
+        series: [],
+        meta: { note: "Missing local authority name for UKHPI lookup." },
+      },
+      200,
+      origin
+    );
+  }
+
+  const query = buildUkhpiSparql(token);
+  const { res, parsed } = await landRegistrySparql(query);
+
+  if (!res.ok || !parsed || !parsed.results || !Array.isArray(parsed.results.bindings)) {
+    return json(
+      {
+        la,
+        month: month || null,
+        index: null,
+        series: [],
+        meta: {
+          note: "UKHPI SPARQL request failed or returned no bindings.",
+          status: res.status,
+        },
+      },
+      200,
+      origin
+    );
+  }
+
+  let rows = parsed.results.bindings;
+  if (!rows.length) {
+    return json(
+      {
+        la,
+        month: month || null,
+        index: null,
+        series: [],
+        meta: { note: "No UKHPI rows matched this local authority label." },
+      },
+      200,
+      origin
+    );
+  }
+
+  const region0 = sparqlBindingValue(rows[0], "region");
+  if (region0) {
+    rows = rows.filter((b) => sparqlBindingValue(b, "region") === region0);
+  }
+
+  const points = rows
+    .map((b) => {
+      const mk = monthKeyFromRefMonthBinding(b);
+      const ukhpiStr = sparqlBindingValue(b, "ukhpi");
+      const val = parseFloat(ukhpiStr);
+      return {
+        month: mk,
+        value: Number.isFinite(val) ? val : 0,
+        volume: sparqlBindingValue(b, "volume"),
+        regionName: sparqlBindingValue(b, "regionName"),
+      };
+    })
+    .filter((p) => p.month);
+
+  points.sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : 0));
+
+  const target = /^\d{4}-\d{2}$/.test(month) ? month : "";
+  let chosen = null;
+  if (target) {
+    const atOrBefore = points.filter((p) => p.month <= target);
+    chosen = atOrBefore.length ? atOrBefore[atOrBefore.length - 1] : null;
+  }
+  if (!chosen && points.length) {
+    chosen = points[points.length - 1];
+  }
+
+  const tail = points.slice(-12);
+  const series = tail.map((p) => ({
+    month: p.month,
+    value: p.value,
+    index: p.value,
+  }));
+
   return json(
     {
-      la: la || null,
-      month: month || null,
-      index: null,
-      series: [],
+      la,
+      month: chosen ? chosen.month : month || null,
+      index: chosen && chosen.value > 0 ? chosen.value : null,
+      series,
       meta: {
-        note: "ONS/Land Registry HPI series can be bound to la + month",
+        note: chosen
+          ? `UKHPI house price index (${sparqlBindingValue(rows[0], "regionName") || la}).`
+          : "UKHPI matched region but index value missing.",
+        source: "landregistry-ukhpi-sparql",
       },
     },
     200,
