@@ -1,65 +1,64 @@
 # £Per — development handoff
 
-Use this file when reopening the project or a new chat session. It summarizes how the repo is structured, what is real vs placeholder, and where to edit.
+Use this file when reopening the project or a new chat session. It describes stack, deployment, data sources, and what is implemented vs still thin.
 
 ## Stack constraints
 
-- **Frontend:** `index.html` + `app.js` + ES modules under `js/`. No bundler, no npm required for the UI. Tailwind and Leaflet load from CDN in `index.html`.
-- **Backend:** Single Cloudflare Worker script at `worker/src/index.js` (plain JavaScript). **No Wrangler config** is kept in the repo; deploy via **Cloudflare Dashboard** (paste/upload worker code).
+- **Frontend:** `index.html` + `app.js` + ES modules under `js/`. No bundler; no npm required for the UI. Tailwind and Leaflet load from CDN in `index.html`.
+- **Backend:** Single Cloudflare Worker at `worker/src/index.js` (plain JavaScript). **No Wrangler config** in the repo; deploy via **Cloudflare Dashboard** (paste/upload the worker script).
 
 ## Worker secrets (Cloudflare Dashboard)
 
 EPC Open Data Communities uses HTTP Basic auth: `Base64("email:apikey")`.
 
-**Recommended:** set two **Secrets** on the Worker:
+| Secret | Purpose |
+|--------|---------|
+| `EPC_EMAIL` | EPC account email |
+| `EPC_API_KEY` | EPC API key |
 
-| Secret        | Purpose        |
-|---------------|----------------|
-| `EPC_EMAIL`   | EPC account email |
-| `EPC_API_KEY` | EPC API key   |
+Optional fallback: `EPC_AUTH_B64` / `EPC_BASIC_B64` / `EPC_TOKEN` = Base64 blob only (the part after `Basic ` in curl). If both email+key and precomputed exist, **email + key win**.
 
-Optional fallback: one secret `EPC_AUTH_B64` / `EPC_BASIC_B64` / `EPC_TOKEN` containing only the Base64 blob (the part after `Basic ` in curl examples). If both email+key and precomputed are set, **email + API key win**.
-
-Never commit credentials. Rotate keys if exposed.
+Never commit credentials.
 
 ## API base URL (frontend)
 
-The Worker origin is defined **once** in `js/api/resolve.js` as `API_BASE` (currently `https://royal-bar-6cc5.sidehustlesallam.workers.dev`). Other modules use `js/utils/fetch.js` which imports that base. Update here if the deployment URL changes.
+Defined **once** in `js/api/resolve.js` as `API_BASE`. `js/utils/fetch.js` uses that base for all Worker GETs. Update when the deployment URL changes.
 
-## Worker routes (contract)
+## Worker routes (`worker/src/index.js`)
 
-Implemented in `worker/src/index.js`:
-
-- `GET /resolve?input=` — postcode geocode (postcodes.io) + **EPC domestic search** by postcode (many rows for dropdown); falls back to a single centroid row if EPC is unavailable.
-- `GET /geo?postcode=`, `GET /address?uprn=`
-- `GET /epc/search?postcode=` | `uprn=`, `GET /epc/certificate?rrn=` (value is **lmk-key**)
-- `GET /ppi/recent`, `GET /hpi`, `GET /schools/nearby`, `GET /transport`, `GET /broadband`, `GET /flood`, `GET /radon`
-
-`rrn` in the contract is used as the EPC **lmk-key** path parameter.
+| Route | Behaviour |
+|-------|-----------|
+| `GET /resolve?input=` | **Postcode:** postcodes.io geocode + EPC domestic search by postcode (many rows); centroid fallback if no EPC. **UPRN:** if `input` is 7–12 digits (spaces ignored), EPC domestic search by UPRN; each row geocoded via its postcode for `lat`/`lon`/LA. **Zoopla URL:** not implemented — treat as future work. |
+| `GET /geo?postcode=` | postcodes.io |
+| `GET /address?uprn=` | EPC domestic search by UPRN (first row address fields) |
+| `GET /epc/search?postcode=` \| `uprn=` | Proxies EPC API (auth required) |
+| `GET /epc/certificate?rrn=` | `rrn` = EPC **lmk-key** |
+| `GET /ppi/recent?postcode=` | Land Registry **SPARQL** (PPD): last 5 sales by postcode; optional EPC domestic search (same secrets) to attach floor area + rating per row |
+| `GET /hpi?la=&month=&postcode=` | UKHPI via Land Registry **SPARQL**; if `la` empty, `postcode` resolves LA via postcodes.io. Returns `index` + `series` (month → house price index). **Note:** HPI-adjusted columns in the UI have been unreliable for some districts; verify bindings and LA label matching if revisiting. |
+| `GET /schools/nearby?postcode=` | postcodes.io for lat/lon; **HTML fetch** of [reports.ofsted.gov.uk](https://reports.ofsted.gov.uk) search (childcare → nursery school/school with nursery, open, **2 mile** radius, **10** rows). Parsed with regex on `li.search-result` — fragile if Ofsted change markup. |
+| `GET /transport`, `GET /broadband`, `GET /flood`, `GET /radon` | Structured placeholders + `meta.note` (see worker) |
 
 ## Frontend data flow
 
-1. User searches → `resolveAddresses()` → `/resolve` → dropdown options (each option may include `lmkKey`, `uprn`, `postcode`, `lat`, `lon`).
-2. User selects an address → `loadDatasetForSelection()` in `app.js`:
-   - Parallel fetches: geo, EPC search, PPI, HPI, schools, transport, broadband, flood, radon.
-   - Then certificate fetch using **selected** `lmkKey`, and `/address?uprn=` when UPRN exists.
-3. All JSON is passed through `js/normalisers/` before panels read `state.normalised`.
-4. `js/panels/index.js` → `renderAllPanels(state)`.
+1. User enters **postcode** and/or **UPRN** (`index.html`); Search calls `resolveAddresses()` → `/resolve` with whichever token applies (UPRN wins when the UPRN field holds 7–12 digits).
+2. Dropdown populated from normalised resolve results; user picks a row.
+3. `loadDatasetForSelection()` in `app.js` runs parallel GETs (geo, EPC search, PPI, HPI, schools, transport, broadband, flood, radon), then EPC certificate + `/address` when UPRN/lmk available.
+4. All slices pass through `js/normalisers/` → `state.normalised`.
+5. `js/panels/index.js` → `renderAllPanels(state)`.
 
-## Normalisers (EPC field names)
+## Normalisers (`js/normalisers/`)
 
-EPC JSON often uses **hyphenated** keys. `js/normalisers/epc.js` maps aliases, including:
+EPC hyphenated keys are normalised in `epc.js` (`firstDefined` helpers). Notable fields:
 
-- Floor area: `total-floor-area`, etc.
-- Ratings: `current-energy-rating`, `potential-energy-rating`
-- Lodgement: `lodgement-date`
+- `certificateDate`: inspection date if present, else lodgement (for “Date of EPC certificate” in UI).
+- Floor area → `floorAreaSqm` / `floorAreaSqft` on rows.
 
-Extend `firstDefined` / pick helpers if new API shapes appear.
+Extend pick helpers if API shapes change.
 
 ## Panels and DOM roots
 
-| Panel | File | Root element id |
-|-------|------|------------------|
+| Panel | File | Root id |
+|-------|------|---------|
 | Registered Asset | `js/panels/panel1-identity.js` | `panel-identity` |
 | Map | `js/panels/panel2-map.js` | `panel-map` |
 | Market | `js/panels/panel3-market.js` | `panel-market` |
@@ -68,22 +67,43 @@ Extend `firstDefined` / pick helpers if new API shapes appear.
 | Utilities | `js/panels/panel6-utilities.js` | `panel-utilities` |
 | Risk | `js/panels/panel7-risk.js` | `panel-risk` |
 
-## Implemented vs placeholder (Worker)
+### Map panel (important)
 
-- **Live:** postcodes.io; EPC search/certificate/address (with auth); resolve enrichment from EPC.
-- **Placeholder / empty structured JSON:** PPI, HPI series, schools list, transport stops, broadband speeds, flood/radon detail (see `worker/src/index.js` handlers — often include `meta.note`).
+`panel2-map.js` must **not** replace `#leaflet-map` with `innerHTML` on every render — Leaflet binds to a DOM node. Reuse the existing `#leaflet-map` when coords are still valid; only create/destroy on error/no-coords transitions. See `destroyMap()` in that file.
 
-Next incremental work is usually wiring those modules to real upstreams without changing the public route shapes.
+### Market panel
+
+PPD table: address, ft², EPC rating, price, £/ft², HPI-adjusted £ and £/ft² (when series + indices available), market average row. PPI worker returns `address`, `epcRating`, etc.
+
+### Schools panel
+
+Shows Ofsted-derived rows: name (link), category, rating, distance (mi), last report. Depends on worker scrape.
+
+## Implemented vs placeholder (summary)
+
+| Area | Status |
+|------|--------|
+| Resolve (postcode + UPRN), geo, EPC search/certificate/address | **Live** (EPC auth required for EPC paths) |
+| Map (Leaflet) | **Live** (see reuse note above) |
+| PPI (PPD SPARQL) + EPC enrichment on worker | **Live** |
+| HPI (UKHPI SPARQL) | **Wired**; behaviour may need more tuning for some LAs |
+| Schools (Ofsted HTML) | **Live** (fragile to HTML changes; respect Ofsted terms/rate limits) |
+| Transport, broadband, flood, radon | **Placeholder** JSON + `meta.note` |
+
+## Land Registry SPARQL
+
+- Endpoint: `https://landregistry.data.gov.uk/landregistry/query` (POST, `Accept: application/sparql-results+json`, form body `query=`).
+- PPD and UKHPI queries live in `worker/src/index.js` (builder helpers + `sparqlBindingValue`, `monthKeyFromUkhpiBinding`, etc.).
 
 ## Local testing
 
-- Open `index.html` via a local static server if module CORS/file protocol is an issue (e.g. `npx serve` or VS Code Live Server). Not required for all browsers.
-- Test Worker routes with curl or browser against the deployed `workers.dev` URL.
+- Static UI: open `index.html` or use a small static server if ES module file:// issues.
+- Worker: curl or browser against `API_BASE` routes.
 
 ## Git
 
-- `.gitignore` includes `node_modules/` and `dist/`. No Wrangler artifacts are required.
+`.gitignore` includes `node_modules/` and `dist/`. No Wrangler artifacts required.
 
 ---
 
-*Last intent: single source of truth for “how to resume” edits; keep in sync when architecture or secrets strategy changes.*
+*Keep this file aligned with the worker and UI when adding routes, secrets, or upstream integrations.*

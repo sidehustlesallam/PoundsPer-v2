@@ -1,8 +1,10 @@
 # £Per — notes for coding agents
 
-- **Handoff doc:** Start with [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (architecture, secrets, routes, placeholders).
-- **Frontend:** Build-less (`index.html`, `app.js`, `js/**`). Tailwind/Leaflet via CDN only.
-- **Worker:** `worker/src/index.js` — plain JavaScript. Deploy via Cloudflare Dashboard; **do not add Wrangler config** unless the user explicitly asks. User will deploy to cloudflare directly using copy/paste
-- **API URL:** Single base in `js/api/resolve.js` (`API_BASE`).
+- **Handoff:** Read [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) first (routes, secrets, what is live vs placeholder, map/schools/HPI caveats).
+- **Frontend:** Build-less (`index.html`, `app.js`, `js/**`). Tailwind + Leaflet from CDN only.
+- **Worker:** `worker/src/index.js` — plain JavaScript. Deploy via **Cloudflare Dashboard** (copy/paste). **Do not add Wrangler** unless the user explicitly asks.
+- **API base:** `js/api/resolve.js` → `API_BASE` (also used by `js/utils/fetch.js`).
 - **EPC auth:** Worker secrets `EPC_EMAIL` + `EPC_API_KEY` (see DEVELOPMENT.md). Never commit credentials.
-- **Contract:** Do not rename `js/` layout files from the master spec without user instruction; normalise all API data before UI use.
+- **Contract:** Do not rename `js/panels/panel*.js` or panel DOM ids without user instruction. Normalise in `js/normalisers/` before panels consume data.
+- **Resolve input:** Postcode **or** 7–12 digit UPRN (header has both fields; UPRN takes precedence when valid). Zoopla-style URLs are **not** implemented in `/resolve` yet.
+- **Fragile integrations:** Ofsted schools = HTML regex; Land Registry = SPARQL shape assumptions. Touch those areas carefully and retest after upstream changes.
