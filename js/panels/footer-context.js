@@ -49,6 +49,11 @@ function hpiBlock(state) {
 
   const hpiNote = escapeHtml(hpi.meta?.note || "");
   const ppiNote = escapeHtml(ppi.meta?.note || "");
+  const ppiHpiMeta =
+    ppi.meta?.hpi && typeof ppi.meta.hpi === "object" ? ppi.meta.hpi : null;
+  const ppiHpiNote = ppiHpiMeta?.hpiNote
+    ? escapeHtml(String(ppiHpiMeta.hpiNote))
+    : "";
 
   return `
     <section>
@@ -57,6 +62,7 @@ function hpiBlock(state) {
       <p class="text-xs text-[#8E95A3] leading-relaxed">${hpiExplain}</p>
       ${hpiNote ? `<p class="text-xs text-[#8E95A3] mt-2">${hpiNote}</p>` : ""}
       ${ppiNote ? `<p class="text-xs text-[#8E95A3] mt-1">${ppiNote}</p>` : ""}
+      ${ppiHpiNote ? `<p class="text-xs text-[#8E95A3] mt-2">${ppiHpiNote}</p>` : ""}
     </section>
   `;
 }

@@ -1,4 +1,4 @@
-import { formatDateIso, toInt } from "../utils/format.js";
+import { formatDateIso, toFloat, toInt } from "../utils/format.js";
 import { formatPostcode, normalizePostcode } from "../utils/postcode.js";
 import { pricePerSqft, pricePerSqm, sqmToSqft } from "../utils/math.js";
 
@@ -32,6 +32,11 @@ export function normalisePpiResponse(raw) {
     const epcRating = safeStr(x.epcRating ?? x.epcEnergyRating ?? "")
       .trim()
       .toUpperCase();
+    const adjRaw = x.adjustedPrice;
+    const adjustedPrice =
+      adjRaw === null || adjRaw === undefined || adjRaw === ""
+        ? null
+        : toInt(adjRaw);
     return {
       date,
       price,
@@ -44,6 +49,25 @@ export function normalisePpiResponse(raw) {
       postcode: formatPostcode(normalizePostcode(x.postcode ?? postcode)),
       displayAddress,
       epcRating,
+      localAuthority: safeStr(x.localAuthority ?? ""),
+      saleMonth: safeStr(x.saleMonth ?? (date.length >= 7 ? date.slice(0, 7) : "")),
+      hpiSale:
+        x.hpiSale === null || x.hpiSale === undefined || x.hpiSale === ""
+          ? null
+          : toFloat(x.hpiSale),
+      hpiNow:
+        x.hpiNow === null || x.hpiNow === undefined || x.hpiNow === ""
+          ? null
+          : toFloat(x.hpiNow),
+      factor:
+        x.factor === null || x.factor === undefined || x.factor === ""
+          ? null
+          : toFloat(x.factor),
+      adjustedPrice: adjustedPrice > 0 ? adjustedPrice : null,
+      hpiReferenceMonth: safeStr(x.hpiReferenceMonth ?? ""),
+      hpiRegionSlug: safeStr(x.hpiRegionSlug ?? ""),
+      hpiTier: safeStr(x.hpiTier ?? ""),
+      hpiMatchedRegion: safeStr(x.hpiMatchedRegion ?? ""),
     };
   });
 

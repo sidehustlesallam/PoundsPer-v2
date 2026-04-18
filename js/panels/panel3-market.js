@@ -1,5 +1,5 @@
 import { el } from "../utils/dom.js";
-import { formatGbp, formatNumber, toFloat } from "../utils/format.js";
+import { formatGbp, formatNumber, toFloat, toInt } from "../utils/format.js";
 import {
   adjustPriceForHpi,
   hpiIndexForTransaction,
@@ -30,6 +30,8 @@ function formatGbpPerSqft(ps) {
 }
 
 function hpiAdjustedForRow(t, hpi) {
+  const fromWorker = toInt(t.adjustedPrice);
+  if (fromWorker > 0) return fromWorker;
   const targetIdx =
     hpi.index != null && hpi.index !== undefined && toFloat(hpi.index) > 0
       ? toFloat(hpi.index)

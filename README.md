@@ -56,7 +56,7 @@ Base URL = Worker origin (`API_BASE` on the client).
 | `/address?uprn=` | Address snippet from EPC |
 | `/epc/search?postcode=` \| `uprn=` | EPC domestic search |
 | `/epc/certificate?rrn=` | EPC certificate; `rrn` = **lmk-key** |
-| `/ppi/recent?postcode=` | PPD via SPARQL + optional EPC floor/rating match |
+| `/ppi/recent?postcode=` | PPD via SPARQL + optional EPC floor/rating match + **per-row UKHPI** (`adjustedPrice`, `factor`, `hpiSale`, `hpiNow`, `localAuthority`, `hpiTier`, etc.; see DEVELOPMENT.md) |
 | `/hpi?la=&month=&postcode=` | UKHPI SPARQL; `postcode` helps resolve LA when `la` is empty. `la` should be a **district name** (e.g. Westminster), not an ONS code — see [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) (Land Registry / postcodes.io). |
 | `/schools/nearby?postcode=` | Ofsted HTML scrape near postcode (2 mi, 10 results) |
 | `/transport?lat=&lon=` | Placeholder |
@@ -74,7 +74,7 @@ Each module has a normaliser. Rules include:
 - **PPI:** Integer prices, ISO dates, £/m² and £/ft² from area.
 - **Schools:** Miles from metres; Ofsted strings passed through.
 - **Geo / resolve / others:** See individual files under `js/normalisers/`.
-- **HPI:** `hpi.js` maps worker `series` + `index` to month keys (`YYYY-MM`) and drives HPI-adjusted £ / £/ft² in the market panel; empty series almost always means the worker could not match the local authority name to UKHPI (see DEVELOPMENT.md).
+- **HPI:** `hpi.js` maps `/hpi` worker `series` + `index` for month keys (`YYYY-MM`). **Market HPI columns prefer** per-row `adjustedPrice` from `/ppi/recent` (worker UKHPI enrichment: LA → region → UK). If those are null, the panel falls back to client-side math from `/hpi`.
 
 ---
 

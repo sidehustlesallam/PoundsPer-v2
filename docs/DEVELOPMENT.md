@@ -34,8 +34,8 @@ Defined **once** in `js/api/resolve.js` as `API_BASE`. `js/utils/fetch.js` uses 
 | `GET /address?uprn=` | EPC domestic search by UPRN (first row address fields) |
 | `GET /epc/search?postcode=` \| `uprn=` | Proxies EPC API (auth required) |
 | `GET /epc/certificate?rrn=` | `rrn` = EPC **lmk-key** |
-| `GET /ppi/recent?postcode=` | Land Registry **SPARQL** (PPD): last 5 sales by postcode; optional EPC domestic search (same secrets) to attach floor area + rating per row |
-| `GET /hpi?la=&month=&postcode=` | UKHPI via Land Registry **SPARQL**; if `la` empty, `postcode` resolves LA via postcodes.io. Returns `index` + `series` (month → house price index). **Requires a human district name** for `la` (or a postcode that resolves to one): UKHPI filters on `rdfs:label` text, not ONS codes (see Land Registry section below). |
+| `GET /ppi/recent?postcode=` | Land Registry **SPARQL** (PPD): last 5 sales by postcode; optional EPC domestic search (same secrets) to attach floor area + rating per row. **UKHPI enrichment (same response):** postcodes.io → local authority name → UKHPI region slug (`/id/region/{slug}`) via label discovery; monthly series from SPARQL; each row gets `hpiSale`, `hpiNow`, `factor`, `adjustedPrice`, `localAuthority`, `hpiTier` (`la` \| `region` \| `uk`), `meta.hpi` summary. Fallback order: LA → postcodes.io **region** → `united-kingdom`. |
+| `GET /hpi?la=&month=&postcode=` | UKHPI via Land Registry **SPARQL** on a fixed `…/id/region/{slug}` (slug from label discovery on `la`, else postcode geo with LA → region → UK fallback). Returns `index` + `series` (month → house price index). **Requires a human district name** for `la` when no `postcode` (or a postcode that resolves to one): discovery uses `rdfs:label` text, not ONS codes (see Land Registry section below). |
 | `GET /schools/nearby?postcode=` | postcodes.io for lat/lon; **HTML fetch** of [reports.ofsted.gov.uk](https://reports.ofsted.gov.uk) search (childcare → nursery school/school with nursery, open, **2 mile** radius, **10** rows). Parsed with regex on `li.search-result` — fragile if Ofsted change markup. |
 | `GET /transport`, `GET /broadband`, `GET /flood`, `GET /radon` | Structured placeholders + `meta.note` (see worker) |
 
@@ -87,7 +87,7 @@ Extend pick helpers if API shapes change.
 
 ### Market panel
 
-PPD table only: address, ft², EPC rating, price, £/ft², HPI-adjusted £ and £/ft² (when series + indices available), market average row. PPI worker returns `address`, `epcRating`, etc. HPI/PPD explanatory text is in the footer (`footer-context.js`).
+PPD table only: address, ft², EPC rating, price, £/ft², HPI-adjusted £ and £/ft² (when worker supplies `adjustedPrice` per row or client falls back to `/hpi` series), market average row. Prefer **worker-enriched** PPI (`/ppi/recent`) for HPI columns. HPI/PPD explanatory text is in the footer (`footer-context.js`).
 
 ### Schools panel
 

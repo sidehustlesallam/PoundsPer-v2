@@ -772,33 +772,252 @@ function ukhpiLaFilterToken(la) {
   return s.trim();
 }
 
-function buildUkhpiRegionNameFilter(laRaw, laPrimary) {
-  const primary = sparqlStringLiteral(laPrimary || "");
-  const raw = sparqlStringLiteral(String(laRaw || "").trim());
-  if (raw && primary && raw !== primary) {
-    return `(CONTAINS(lcase(str(?regionName)), lcase("${primary}")) || CONTAINS(lcase(str(?regionName)), lcase("${raw}")))`;
-  }
-  return `CONTAINS(lcase(str(?regionName)), lcase("${primary}"))`;
+/** Allow only Land Registry region slug characters in interpolated URIs. */
+function validateUkhpiSlug(slug) {
+  const s = String(slug || "").trim().toLowerCase();
+  if (!/^[a-z0-9-]{2,80}$/.test(s)) return "";
+  return s;
 }
 
-function buildUkhpiSparql(laRaw, laPrimary) {
-  const regionFilter = buildUkhpiRegionNameFilter(laRaw, laPrimary);
-  return `
+function regionSlugFromRegionUri(uri) {
+  const m = String(uri || "").match(/\/id\/region\/([^/#?]+)\s*$/i);
+  if (!m) return "";
+  return validateUkhpiSlug(m[1]);
+}
+
+/** Latest UKHPI index on or before sale month (same semantics as frontend hpiIndexForTransaction). */
+function ukhpiIndexForObservedMonth(monthsAsc, byMonth, saleYyyyMm) {
+  if (!saleYyyyMm || !/^\d{4}-\d{2}$/.test(saleYyyyMm) || !monthsAsc.length) {
+    return null;
+  }
+  const last = monthsAsc[monthsAsc.length - 1];
+  if (saleYyyyMm > last) return byMonth.get(last) ?? null;
+  let chosen = null;
+  for (const m of monthsAsc) {
+    if (m <= saleYyyyMm) chosen = byMonth.get(m);
+    else break;
+  }
+  if (chosen != null) return chosen;
+  return byMonth.get(monthsAsc[0]) ?? null;
+}
+
+/** Discover `…/id/region/{slug}` by matching `rdfs:label` (CONTAINS). */
+async function discoverUkhpiSlugForLabelSearch(searchToken) {
+  const token = ukhpiLaFilterToken(searchToken);
+  if (!token || token.length < 2) return { slug: "", label: "" };
+  const esc = sparqlStringLiteral(token);
+  const q = `
 PREFIX ukhpi: <http://landregistry.data.gov.uk/def/ukhpi/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT ?obs ?region ?refMonth ?refPeriodStart ?hpiVal ?volume ?regionName
+SELECT DISTINCT ?region ?regionName
 WHERE {
   ?obs ukhpi:refRegion ?region ;
        ukhpi:housePriceIndex ?hpiVal .
+  ?region rdfs:label ?regionName .
+  FILTER ( CONTAINS(lcase(str(?regionName)), lcase("${esc}")) )
+}
+LIMIT 50
+`.trim();
+  const { res, parsed } = await landRegistrySparql(q);
+  if (!res.ok || !parsed || !parsed.results || !Array.isArray(parsed.results.bindings)) {
+    return { slug: "", label: "" };
+  }
+  const bindings = parsed.results.bindings;
+  const tokenLower = token.toLowerCase();
+  let bestSlug = "";
+  let bestLabel = "";
+  let bestScore = -1;
+  for (const b of bindings) {
+    const label = sparqlBindingValue(b, "regionName").trim();
+    const regionUri = sparqlBindingValue(b, "region");
+    const slug = regionSlugFromRegionUri(regionUri);
+    if (!slug || !label) continue;
+    const ll = label.toLowerCase();
+    let score = 0;
+    if (ll === tokenLower) score = 1000;
+    else if (ll.startsWith(`${tokenLower} `) || ll.endsWith(` ${tokenLower}`)) score = 800;
+    else if (ll.includes(tokenLower)) score = 400 + Math.min(tokenLower.length, 30);
+    if (score > bestScore) {
+      bestScore = score;
+      bestSlug = slug;
+      bestLabel = label;
+    }
+  }
+  return { slug: bestSlug, label: bestLabel };
+}
+
+/** All monthly points for a fixed UKHPI refRegion slug (deterministic; SPARQL only). */
+async function fetchUkhpiSeriesPointsForSlug(slug) {
+  const s = validateUkhpiSlug(slug);
+  if (!s) return [];
+  const regionUri = `http://landregistry.data.gov.uk/id/region/${s}`;
+  const q = `
+PREFIX ukhpi: <http://landregistry.data.gov.uk/def/ukhpi/>
+
+SELECT ?refMonth ?refPeriodStart ?hpiVal
+WHERE {
+  ?obs ukhpi:refRegion <${regionUri}> ;
+       ukhpi:housePriceIndex ?hpiVal .
   OPTIONAL { ?obs ukhpi:refMonth ?refMonth }
   OPTIONAL { ?obs ukhpi:refPeriodStart ?refPeriodStart }
-  OPTIONAL { ?obs ukhpi:salesVolume ?volume }
-  ?region rdfs:label ?regionName .
-  FILTER ( ${regionFilter} )
 }
-LIMIT 500
+LIMIT 3000
 `.trim();
+  const { res, parsed } = await landRegistrySparql(q);
+  if (!res.ok || !parsed || !parsed.results || !Array.isArray(parsed.results.bindings)) {
+    return [];
+  }
+  const points = parsed.results.bindings
+    .map((b) => {
+      const mk = monthKeyFromUkhpiBinding(b);
+      const hpiStr = sparqlBindingValue(b, "hpiVal");
+      const val = parseFloat(hpiStr);
+      return {
+        month: mk,
+        value: Number.isFinite(val) ? val : 0,
+      };
+    })
+    .filter((p) => p.month && /^\d{4}-\d{2}$/.test(p.month) && p.value > 0);
+
+  const byMonth = new Map();
+  for (const p of points) {
+    byMonth.set(p.month, p.value);
+  }
+  const monthsAsc = [...byMonth.keys()].sort((a, b) => a.localeCompare(b));
+  return monthsAsc.map((m) => ({ month: m, value: byMonth.get(m) }));
+}
+
+/**
+ * LA → UKHPI slug+series, else postcodes.io region → series, else UK `united-kingdom`.
+ */
+async function ukhpiFetchSlugSeriesForGeo(geo) {
+  if (!geo || !geo.ok) return null;
+  const laName = geo.localAuthority || "";
+  const regionName = geo.region || "";
+
+  if (laName) {
+    const d = await discoverUkhpiSlugForLabelSearch(laName);
+    if (d.slug) {
+      const pts = await fetchUkhpiSeriesPointsForSlug(d.slug);
+      if (pts.length) {
+        return { slug: d.slug, label: d.label, tier: "la", points: pts };
+      }
+    }
+  }
+  if (regionName) {
+    const d = await discoverUkhpiSlugForLabelSearch(regionName);
+    if (d.slug) {
+      const pts = await fetchUkhpiSeriesPointsForSlug(d.slug);
+      if (pts.length) {
+        return { slug: d.slug, label: d.label, tier: "region", points: pts };
+      }
+    }
+  }
+  const pts = await fetchUkhpiSeriesPointsForSlug("united-kingdom");
+  if (pts.length) {
+    return {
+      slug: "united-kingdom",
+      label: "United Kingdom",
+      tier: "uk",
+      points: pts,
+    };
+  }
+  return null;
+}
+
+/**
+ * Enrich PPD rows in-place: postcode → LA (postcodes.io), UKHPI slug+series,
+ * factor = hpiNow / hpiSale, adjustedPrice = price × factor. Nulls when HPI missing.
+ */
+async function enrichPpiTransactionsWithUkhpi(postcodeFormatted, transactions) {
+  const geo = await lookupPostcodeGeo(postcodeFormatted);
+  const baseMeta = {
+    hpiTier: null,
+    hpiRegionSlug: null,
+    hpiMatchedRegion: null,
+    localAuthorityFromPostcode: "",
+    hpiReferenceMonth: null,
+    hpiNote: "",
+  };
+
+  for (const t of transactions) {
+    t.saleMonth = t.date && t.date.length >= 7 ? t.date.slice(0, 7) : "";
+    t.hpiSale = null;
+    t.hpiNow = null;
+    t.factor = null;
+    t.adjustedPrice = null;
+    t.hpiReferenceMonth = null;
+    t.hpiRegionSlug = null;
+    t.hpiTier = null;
+    t.hpiMatchedRegion = null;
+    t.localAuthority = "";
+  }
+
+  if (!geo.ok) {
+    return {
+      ...baseMeta,
+      hpiNote: "Postcode not found; HPI enrichment skipped.",
+    };
+  }
+
+  const laName = geo.localAuthority || "";
+  baseMeta.localAuthorityFromPostcode = laName;
+
+  const bundle = await ukhpiFetchSlugSeriesForGeo(geo);
+  if (!bundle || !bundle.points.length) {
+    for (const t of transactions) {
+      t.localAuthority = laName;
+    }
+    return {
+      ...baseMeta,
+      hpiNote: "No UKHPI series for local authority, region, or UK fallback.",
+    };
+  }
+
+  const byMonth = new Map();
+  for (const p of bundle.points) {
+    if (p.month && p.value > 0) byMonth.set(p.month, p.value);
+  }
+  const monthsAsc = [...byMonth.keys()].sort((a, b) => a.localeCompare(b));
+  const hpiNowMonth = monthsAsc.length ? monthsAsc[monthsAsc.length - 1] : null;
+  const hpiNowVal =
+    hpiNowMonth != null ? byMonth.get(hpiNowMonth) : null;
+
+  const tierWord =
+    bundle.tier === "la"
+      ? "local authority"
+      : bundle.tier === "region"
+        ? "region"
+        : "UK";
+
+  for (const t of transactions) {
+    t.localAuthority = laName;
+    t.hpiRegionSlug = bundle.slug;
+    t.hpiTier = bundle.tier;
+    t.hpiMatchedRegion = bundle.label;
+
+    const saleMonth = t.saleMonth;
+    if (!hpiNowVal || hpiNowVal <= 0 || !saleMonth || !t.price) continue;
+
+    const saleIdx = ukhpiIndexForObservedMonth(monthsAsc, byMonth, saleMonth);
+    if (saleIdx == null || saleIdx <= 0) continue;
+
+    t.hpiSale = Math.round(saleIdx * 100) / 100;
+    t.hpiNow = Math.round(hpiNowVal * 100) / 100;
+    t.factor = Math.round((hpiNowVal / saleIdx) * 1e6) / 1e6;
+    t.adjustedPrice = Math.round(t.price * (hpiNowVal / saleIdx));
+    t.hpiReferenceMonth = hpiNowMonth;
+  }
+
+  return {
+    hpiTier: bundle.tier,
+    hpiRegionSlug: bundle.slug,
+    hpiMatchedRegion: bundle.label,
+    localAuthorityFromPostcode: laName,
+    hpiReferenceMonth: hpiNowMonth,
+    hpiNote: `UKHPI (${tierWord}: ${bundle.label}); reference month ${hpiNowMonth}.`,
+  };
 }
 
 /** Land Registry PPD via SPARQL; optional EPC domestic search for floor area when worker has EPC auth. */
@@ -868,15 +1087,19 @@ async function handlePpiRecent(url, env, origin) {
     t.epcRating = match.rating;
   }
 
+  const hpiMeta = await enrichPpiTransactionsWithUkhpi(postcodeOut, transactions);
+  const baseNote = epcRows.length
+    ? "PPD from Land Registry SPARQL; floor area matched from EPC domestic search where possible."
+    : "PPD from Land Registry SPARQL; set EPC_EMAIL + EPC_API_KEY to enrich with EPC floor areas.";
+
   return json(
     {
       transactions,
       postcode: postcodeOut,
       meta: {
-        note: epcRows.length
-          ? "PPD from Land Registry SPARQL; floor area matched from EPC domestic search where possible."
-          : "PPD from Land Registry SPARQL; set EPC_EMAIL + EPC_API_KEY to enrich with EPC floor areas.",
+        note: baseNote,
         source: "landregistry-sparql",
+        hpi: hpiMeta,
       },
     },
     200,
@@ -889,106 +1112,51 @@ async function handleHpi(url, origin) {
   const month = url.searchParams.get("month") || "";
   const pcHint = url.searchParams.get("postcode") || "";
 
-  if (!ukhpiLaFilterToken(la) && pcHint) {
-    const geo = await lookupPostcodeGeo(formatPostcode(normalizePostcode(pcHint)));
-    if (geo.ok && geo.localAuthority) {
-      la = geo.localAuthority;
-    }
+  let geo = { ok: false, localAuthority: "", region: "" };
+  if (pcHint) {
+    geo = await lookupPostcodeGeo(formatPostcode(normalizePostcode(pcHint)));
+  }
+  if (!ukhpiLaFilterToken(la) && geo.ok && geo.localAuthority) {
+    la = geo.localAuthority;
   }
 
-  const token = ukhpiLaFilterToken(la);
+  let bundle = null;
+  if (ukhpiLaFilterToken(la)) {
+    const d = await discoverUkhpiSlugForLabelSearch(la);
+    if (d.slug) {
+      const pts = await fetchUkhpiSeriesPointsForSlug(d.slug);
+      if (pts.length) {
+        bundle = { slug: d.slug, label: d.label, tier: "la", points: pts };
+      }
+    }
+  }
+  if (!bundle && geo.ok) {
+    bundle = await ukhpiFetchSlugSeriesForGeo(geo);
+  }
 
-  if (!token || token.length < 2) {
+  const laOut = la || (geo.ok ? geo.localAuthority : "") || "";
+
+  if (!bundle || !bundle.points.length) {
     return json(
       {
-        la: la || null,
+        la: laOut || null,
         month: month || null,
         index: null,
         series: [],
         meta: {
           note:
-            "Missing local authority for UKHPI (pass la= or postcode= so we can resolve admin district).",
+            "No UKHPI series (try la= district name, postcode=, or check Land Registry).",
+          source: "landregistry-ukhpi-sparql",
         },
       },
       200,
       origin
     );
   }
-
-  const query = buildUkhpiSparql(la, token);
-  const { res, parsed } = await landRegistrySparql(query);
-
-  if (!res.ok || !parsed || !parsed.results || !Array.isArray(parsed.results.bindings)) {
-    return json(
-      {
-        la,
-        month: month || null,
-        index: null,
-        series: [],
-        meta: {
-          note: "UKHPI SPARQL request failed or returned no bindings.",
-          status: res.status,
-        },
-      },
-      200,
-      origin
-    );
-  }
-
-  let rows = parsed.results.bindings;
-  if (!rows.length) {
-    return json(
-      {
-        la,
-        month: month || null,
-        index: null,
-        series: [],
-        meta: {
-          note: `No UKHPI rows matched admin district "${token}" (try another postcode or check Land Registry labels).`,
-        },
-      },
-      200,
-      origin
-    );
-  }
-
-  const regionCounts = new Map();
-  for (const b of rows) {
-    const ru = sparqlBindingValue(b, "region");
-    if (!ru) continue;
-    regionCounts.set(ru, (regionCounts.get(ru) || 0) + 1);
-  }
-  let dominantRegion = "";
-  let bestCount = 0;
-  for (const [ru, c] of regionCounts) {
-    if (c > bestCount) {
-      dominantRegion = ru;
-      bestCount = c;
-    }
-  }
-  if (dominantRegion) {
-    rows = rows.filter((b) => sparqlBindingValue(b, "region") === dominantRegion);
-  }
-
-  const points = rows
-    .map((b) => {
-      const mk = monthKeyFromUkhpiBinding(b);
-      const hpiStr = sparqlBindingValue(b, "hpiVal");
-      const val = parseFloat(hpiStr);
-      return {
-        month: mk,
-        value: Number.isFinite(val) ? val : 0,
-        volume: sparqlBindingValue(b, "volume"),
-        regionName: sparqlBindingValue(b, "regionName"),
-      };
-    })
-    .filter((p) => p.month && p.value > 0);
 
   const byMonth = new Map();
-  for (const p of points) {
-    if (p.month && p.value > 0) {
-      byMonth.set(p.month, p.value);
-    }
+  for (const p of bundle.points) {
+    if (p.month && p.value > 0) byMonth.set(p.month, p.value);
   }
   const monthsAsc = [...byMonth.keys()].sort((a, b) => a.localeCompare(b));
   const series = monthsAsc.map((m) => ({
@@ -1014,20 +1182,20 @@ async function handleHpi(url, origin) {
     chosenVal = byMonth.get(key);
   }
 
-  const regionLabel = sparqlBindingValue(rows[0], "regionName") || la;
-
   return json(
     {
-      la,
+      la: laOut || bundle.label,
       month: chosenMonth || month || null,
       index: chosenVal != null && chosenVal > 0 ? chosenVal : null,
       series,
       meta: {
         note:
           chosenVal != null && chosenVal > 0
-            ? `UKHPI house price index (${regionLabel}).`
-            : "UKHPI matched region but index value missing.",
+            ? `UKHPI (${bundle.tier}) ${bundle.label}.`
+            : "UKHPI series present but reference index missing.",
         source: "landregistry-ukhpi-sparql",
+        hpiTier: bundle.tier,
+        hpiRegionSlug: bundle.slug,
       },
     },
     200,
