@@ -581,12 +581,24 @@ LIMIT 5
 `.trim();
 }
 
-function monthKeyFromRefMonthBinding(b) {
-  const v = sparqlBindingValue(b, "refMonth");
-  if (!v) return "";
-  if (/^\d{4}-\d{2}$/.test(v)) return v;
-  const m = String(v).match(/(\d{4}-\d{2})/);
-  return m ? m[1] : v.slice(0, 7);
+/** UKHPI observations may use refMonth (gYearMonth / URI) or refPeriodStart (xsd:date). */
+function monthKeyFromUkhpiBinding(b) {
+  const rm = sparqlBindingValue(b, "refMonth");
+  if (rm) {
+    const s = String(rm).trim();
+    if (/^\d{4}-\d{2}$/.test(s)) return s;
+    const m = s.match(/(\d{4}-\d{2})/);
+    if (m) return m[1];
+    return s.length >= 7 ? s.slice(0, 7) : "";
+  }
+  const rp = sparqlBindingValue(b, "refPeriodStart");
+  if (rp) {
+    const s = String(rp).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 7);
+    const m = s.match(/(\d{4}-\d{2})/);
+    return m ? m[1] : "";
+  }
+  return "";
 }
 
 function ukhpiLaFilterToken(la) {
@@ -605,18 +617,19 @@ function buildUkhpiSparql(laFilterToken) {
 PREFIX ukhpi: <http://landregistry.data.gov.uk/def/ukhpi/>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT ?region ?refMonth ?ukhpi ?volume ?regionName
+SELECT ?region ?refMonth ?refPeriodStart ?ukhpi ?volume ?regionName
 WHERE {
   ?obs ukhpi:refRegion ?region ;
-       ukhpi:refMonth ?refMonth ;
        ukhpi:housePriceIndex ?ukhpi .
+  OPTIONAL { ?obs ukhpi:refMonth ?refMonth }
+  OPTIONAL { ?obs ukhpi:refPeriodStart ?refPeriodStart }
+  FILTER ( bound(?refMonth) || bound(?refPeriodStart) )
   OPTIONAL { ?obs ukhpi:salesVolume ?volume }
   ?region rdfs:label ?regionName .
   FILTER (lang(?regionName) = "" || langMatches(lang(?regionName), "en"))
   FILTER (CONTAINS(lcase(str(?regionName)), lcase("${lit}")))
 }
-ORDER BY DESC(?refMonth)
-LIMIT 300
+LIMIT 500
 `.trim();
 }
 
@@ -776,7 +789,7 @@ async function handleHpi(url, origin) {
 
   const points = rows
     .map((b) => {
-      const mk = monthKeyFromRefMonthBinding(b);
+      const mk = monthKeyFromUkhpiBinding(b);
       const ukhpiStr = sparqlBindingValue(b, "ukhpi");
       const val = parseFloat(ukhpiStr);
       return {
@@ -786,7 +799,7 @@ async function handleHpi(url, origin) {
         regionName: sparqlBindingValue(b, "regionName"),
       };
     })
-    .filter((p) => p.month);
+    .filter((p) => p.month && p.value > 0);
 
   const byMonth = new Map();
   for (const p of points) {

@@ -6,6 +6,7 @@ import {
 } from "../normalisers/hpi.js";
 
 const MAX_TX = 5;
+const COLS = 8;
 
 function escapeHtml(s) {
   return String(s)
@@ -19,6 +20,13 @@ function ellipsize(s, max) {
   if (!t) return "—";
   if (t.length <= max) return t;
   return `${t.slice(0, Math.max(0, max - 1))}…`;
+}
+
+/** Whole £/ft² (HPI columns use same rounding). */
+function formatGbpPerSqft(ps) {
+  const v = Math.round(toFloat(ps));
+  if (v <= 0) return "—";
+  return `£${v.toLocaleString("en-GB")}/ft²`;
 }
 
 function hpiAdjustedForRow(t, hpi) {
@@ -41,49 +49,56 @@ function hpiAdjustedForRow(t, hpi) {
   return adjustPriceForHpi(t.price, baseIdx, targetIdx);
 }
 
+function hpiAdjustedPerSqft(adjPrice, floorAreaSqft) {
+  const sf = toFloat(floorAreaSqft);
+  if (adjPrice == null || sf <= 0) return null;
+  return adjPrice / sf;
+}
+
 function marketAverages(txs) {
   const n = txs.length;
   if (!n) {
     return {
       avgSqft: null,
       avgPrice: null,
-      avgPricePerSqm: null,
+      avgPricePerSqft: null,
       avgHpiAdj: null,
+      avgHpiAdjPerSqft: null,
     };
   }
   let sumPrice = 0;
   let sumSqft = 0;
   let nSqft = 0;
-  let sumSqm = 0;
-  let sumPriceWithSqm = 0;
+  let sumPriceWithSqft = 0;
   let sumHpi = 0;
   let nHpi = 0;
+  let sumHpiSqftDenom = 0;
+  let sumHpiForPerSqft = 0;
   for (const t of txs) {
     sumPrice += t.price || 0;
     const sf = toFloat(t.floorAreaSqft);
     if (sf > 0) {
       sumSqft += sf;
       nSqft += 1;
+      sumPriceWithSqft += t.price || 0;
     }
-    const sm = toFloat(t.floorAreaSqm);
-    if (sm > 0 && t.price) {
-      sumSqm += sm;
-      sumPriceWithSqm += t.price;
+    if (t._hpiAdj != null && t._hpiAdj > 0) {
+      sumHpi += t._hpiAdj;
+      nHpi += 1;
+      if (sf > 0) {
+        sumHpiForPerSqft += t._hpiAdj;
+        sumHpiSqftDenom += sf;
+      }
     }
-  }
-  const adjVals = txs
-    .map((t) => t._hpiAdj)
-    .filter((v) => v != null && v > 0);
-  for (const v of adjVals) {
-    sumHpi += v;
-    nHpi += 1;
   }
   return {
     avgSqft: nSqft > 0 ? sumSqft / nSqft : null,
     avgPrice: sumPrice / n,
-    avgPricePerSqm:
-      sumSqm > 0 ? sumPriceWithSqm / sumSqm : null,
+    avgPricePerSqft:
+      sumSqft > 0 ? sumPriceWithSqft / sumSqft : null,
     avgHpiAdj: nHpi > 0 ? sumHpi / nHpi : null,
+    avgHpiAdjPerSqft:
+      sumHpiSqftDenom > 0 ? sumHpiForPerSqft / sumHpiSqftDenom : null,
   };
 }
 
@@ -106,7 +121,9 @@ export function renderPanelMarket(state) {
   const txsAll = ppi.transactions || [];
   const txs = txsAll.slice(0, MAX_TX).map((t) => {
     const adj = hpiAdjustedForRow(t, hpi);
-    return { ...t, _hpiAdj: adj };
+    const adjPerFt =
+      adj != null ? hpiAdjustedPerSqft(adj, t.floorAreaSqft) : null;
+    return { ...t, _hpiAdj: adj, _hpiAdjPerSqft: adjPerFt };
   });
 
   const av = marketAverages(txs);
@@ -119,8 +136,9 @@ export function renderPanelMarket(state) {
       <td class="py-2 pr-2 font-mono text-[10px] sm:text-xs text-right text-[#C7CBD4]">${t.floorAreaSqft > 0 ? formatNumber(t.floorAreaSqft, 0) : "—"}</td>
       <td class="py-2 pr-2 font-mono text-[10px] sm:text-xs text-center text-[#FACC15]">${escapeHtml(t.epcRating || "—")}</td>
       <td class="py-2 pr-2 font-mono text-[10px] sm:text-xs text-[#4ADE80] whitespace-nowrap">${formatGbp(t.price)}</td>
-      <td class="py-2 pr-2 font-mono text-[10px] sm:text-xs text-[#8E95A3] whitespace-nowrap">${t.pricePerSqm > 0 ? `${formatGbp(t.pricePerSqm)}/m²` : "—"}</td>
-      <td class="py-2 font-mono text-[10px] sm:text-xs text-[#60A5FA] whitespace-nowrap">${t._hpiAdj != null ? formatGbp(t._hpiAdj) : "—"}</td>
+      <td class="py-2 pr-2 font-mono text-[10px] sm:text-xs text-[#8E95A3] whitespace-nowrap">${formatGbpPerSqft(t.pricePerSqft)}</td>
+      <td class="py-2 pr-2 font-mono text-[10px] sm:text-xs text-[#60A5FA] whitespace-nowrap">${t._hpiAdj != null ? formatGbp(t._hpiAdj) : "—"}</td>
+      <td class="py-2 font-mono text-[10px] sm:text-xs text-[#60A5FA] whitespace-nowrap">${t._hpiAdjPerSqft != null ? formatGbpPerSqft(t._hpiAdjPerSqft) : "—"}</td>
     </tr>`
   );
 
@@ -131,24 +149,28 @@ export function renderPanelMarket(state) {
       <td class="py-2 pr-2 font-mono text-[10px] sm:text-xs text-right text-[#C7CBD4]">${av.avgSqft != null ? formatNumber(av.avgSqft, 0) : "—"}</td>
       <td class="py-2 pr-2 text-center text-[10px] sm:text-xs text-[#8E95A3]">—</td>
       <td class="py-2 pr-2 font-mono text-[10px] sm:text-xs text-[#4ADE80]">${av.avgPrice != null ? formatGbp(Math.round(av.avgPrice)) : "—"}</td>
-      <td class="py-2 pr-2 font-mono text-[10px] sm:text-xs text-[#8E95A3]">${av.avgPricePerSqm != null && av.avgPricePerSqm > 0 ? `${formatGbp(Math.round(av.avgPricePerSqm))}/m²` : "—"}</td>
-      <td class="py-2 font-mono text-[10px] sm:text-xs text-[#60A5FA]">${av.avgHpiAdj != null ? formatGbp(Math.round(av.avgHpiAdj)) : "—"}</td>
+      <td class="py-2 pr-2 font-mono text-[10px] sm:text-xs text-[#8E95A3]">${av.avgPricePerSqft != null && av.avgPricePerSqft > 0 ? formatGbpPerSqft(av.avgPricePerSqft) : "—"}</td>
+      <td class="py-2 pr-2 font-mono text-[10px] sm:text-xs text-[#60A5FA]">${av.avgHpiAdj != null ? formatGbp(Math.round(av.avgHpiAdj)) : "—"}</td>
+      <td class="py-2 font-mono text-[10px] sm:text-xs text-[#60A5FA]">${av.avgHpiAdjPerSqft != null && av.avgHpiAdjPerSqft > 0 ? formatGbpPerSqft(av.avgHpiAdjPerSqft) : "—"}</td>
     </tr>`;
 
-  const hpiNote =
-    hpi.index !== null && hpi.index !== undefined && toFloat(hpi.index) > 0
+  const hpiIdx =
+    hpi.index != null && hpi.index !== undefined && toFloat(hpi.index) > 0
       ? formatNumber(toFloat(hpi.index), 2)
       : "—";
 
   const hpiMonth = escapeHtml(hpi.month || "");
-  const hpiExplain = `Each sale is re-valued using the UKHPI for its completion month (base) versus the latest index for this area (${hpiMonth || "n/a"}: ${hpiNote}). Where the sale month is missing or outside the series, “—” is shown.`;
+  const hasSeries = Array.isArray(hpi.series) && hpi.series.length > 0;
+  const hpiExplain = hasSeries
+    ? `HPI-adjusted price revalues each sale to the reference period using UKHPI: sale price × (reference index ÷ index for the sale’s calendar month). Adjusted £/ft² is that figure divided by floor area when ft² is known. Reference index (${hpiMonth || "n/a"}): ${hpiIdx}.`
+    : `No UKHPI series loaded for this area — check worker /hpi (local authority or postcode). Adjusted columns need index values by month.`;
 
   root.innerHTML = `
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <div>
         <h4 class="text-xs uppercase tracking-wide text-[#8E95A3] mb-2">Recent transactions (PPD)</h4>
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-[10px] sm:text-xs min-w-[640px]">
+          <table class="w-full text-left text-[10px] sm:text-xs min-w-[720px]">
             <thead>
               <tr class="text-[#8E95A3]">
                 <th class="pb-2 pr-2 font-normal">Date</th>
@@ -156,21 +178,22 @@ export function renderPanelMarket(state) {
                 <th class="pb-2 pr-2 font-normal text-right">ft²</th>
                 <th class="pb-2 pr-2 font-normal text-center">EPC</th>
                 <th class="pb-2 pr-2 font-normal">Price</th>
-                <th class="pb-2 pr-2 font-normal">£/m²</th>
-                <th class="pb-2 font-normal">HPI adj.</th>
+                <th class="pb-2 pr-2 font-normal">£/ft²</th>
+                <th class="pb-2 pr-2 font-normal">HPI adj. £</th>
+                <th class="pb-2 font-normal">HPI adj. £/ft²</th>
               </tr>
             </thead>
             <tbody>${
               rows.length
                 ? `${rows.join("")}${avgRow}`
-                : `<tr><td colspan="7" class="text-[#8E95A3] py-2">No transactions returned.</td></tr>`
+                : `<tr><td colspan="${COLS}" class="text-[#8E95A3] py-2">No transactions returned.</td></tr>`
             }</tbody>
           </table>
         </div>
       </div>
       <div>
         <h4 class="text-xs uppercase tracking-wide text-[#8E95A3] mb-2">HPI context</h4>
-        <p class="font-mono text-sm text-[#C7CBD4]">Reference index (${hpiMonth || "—"}): <span class="text-[#60A5FA]">${hpiNote}</span></p>
+        <p class="font-mono text-sm text-[#C7CBD4]">Reference index (${hpiMonth || "—"}): <span class="text-[#60A5FA]">${hpiIdx}</span></p>
         <p class="text-xs text-[#8E95A3] mt-2 leading-relaxed">${hpiExplain}</p>
         <p class="text-xs text-[#8E95A3] mt-2">${escapeHtml(hpi.meta?.note || "")}</p>
         <p class="text-xs text-[#8E95A3] mt-1">${escapeHtml(ppi.meta?.note || "")}</p>
