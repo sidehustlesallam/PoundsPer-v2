@@ -1,7 +1,7 @@
 import { el } from "../utils/dom.js";
 import { formatNumber } from "../utils/format.js";
 
-const DEFAULT_SCHOOLS = 5;
+const DEFAULT_SCHOOLS = 3;
 const EXPANDED_SCHOOLS = 10;
 let isSchoolsExpanded = false;
 

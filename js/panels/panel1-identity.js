@@ -1,5 +1,5 @@
 import { el } from "../utils/dom.js";
-import { formatGbp, formatNumber } from "../utils/format.js";
+import { formatNumber } from "../utils/format.js";
 import { sqmToSqft } from "../utils/math.js";
 
 function row(k, v) {
@@ -35,7 +35,7 @@ export function renderPanelIdentity(state) {
     addr.line1 ||
     matched?.address ||
     state.selection?.label ||
-    "Registered asset";
+    "Property";
 
   const floorSqm =
     Number(cert.floorAreaSqm || matched?.floorAreaSqm || 0) || 0;
@@ -53,21 +53,17 @@ export function renderPanelIdentity(state) {
   const rows = [];
   rows.push(row("Postcode", escapeHtml(matched?.postcode || state.selection?.postcode || "—")));
   rows.push(row("UPRN", escapeHtml(matched?.uprn || addr.uprn || state.selection?.uprn || "—")));
-  rows.push(row("EPC rating (current)", escapeHtml(currentRating || "—")));
-  rows.push(row("EPC rating (potential)", escapeHtml(potentialRating || "—")));
+  rows.push(
+    row(
+      "EPC rating",
+      `Current ${escapeHtml(currentRating || "—")} · Potential ${escapeHtml(potentialRating || "—")}`
+    )
+  );
   rows.push(
     row(
       "Floor area",
       floorSqm > 0
         ? `${formatNumber(floorSqm, 1)} m² · ${formatNumber(floorSqft, 0)} ft²`
-        : "—"
-    )
-  );
-  rows.push(
-    row(
-      "£/m² (if price)",
-      cert.transactionPrice
-        ? formatGbp(cert.pricePerSqm)
         : "—"
     )
   );

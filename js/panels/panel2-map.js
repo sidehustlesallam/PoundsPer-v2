@@ -59,13 +59,13 @@ export function renderPanelMap(state) {
     }
 
     if (!mapInstance) {
-      mapInstance = L.map(mapEl).setView([lat, lon], 15);
+      mapInstance = L.map(mapEl).setView([lat, lon], 16);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "&copy; OpenStreetMap",
       }).addTo(mapInstance);
       markerLayer = L.layerGroup().addTo(mapInstance);
     } else {
-      mapInstance.setView([lat, lon], 15);
+      mapInstance.setView([lat, lon], 16);
       if (!markerLayer) {
         markerLayer = L.layerGroup().addTo(mapInstance);
       }
