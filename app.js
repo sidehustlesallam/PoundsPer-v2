@@ -40,6 +40,60 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function setLocateButtonBusy(isBusy) {
+  const btn = $("locate-btn");
+  if (!btn) return;
+  btn.disabled = isBusy;
+  btn.textContent = isBusy ? "Locating…" : "Use my location";
+}
+
+function setLocateStatus(message, tone = "muted") {
+  const el = $("locate-status");
+  if (!el) return;
+  el.textContent = message || "";
+  if (tone === "error") {
+    el.className = "text-xs text-[#F87171] min-h-[1rem] md:ml-auto";
+    return;
+  }
+  if (tone === "success") {
+    el.className = "text-xs text-[#4ADE80] min-h-[1rem] md:ml-auto";
+    return;
+  }
+  el.className = "text-xs text-[#8E95A3] min-h-[1rem] md:ml-auto";
+}
+
+async function postcodeFromDeviceLocation() {
+  if (!navigator.geolocation) {
+    throw new Error("Geolocation is not supported by this browser.");
+  }
+
+  const position = await new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 120000,
+    });
+  });
+
+  const lat = position.coords?.latitude;
+  const lon = position.coords?.longitude;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    throw new Error("Could not read your location coordinates.");
+  }
+
+  const endpoint = `https://api.postcodes.io/postcodes?lon=${encodeURIComponent(lon)}&lat=${encodeURIComponent(lat)}`;
+  const res = await fetch(endpoint);
+  if (!res.ok) {
+    throw new Error("Unable to look up postcode for your location.");
+  }
+  const body = await res.json();
+  const nearest = body?.result?.[0]?.postcode || "";
+  if (!nearest) {
+    throw new Error("No postcode found near your location.");
+  }
+  return nearest;
+}
+
 function safeSelString(v) {
   if (v === null || v === undefined) return "";
   const s = String(v).trim();
@@ -87,6 +141,31 @@ async function runResolve() {
   } catch (e) {
     setError("global", e.message || "Resolve failed");
     renderAllPanels(state);
+  }
+}
+
+async function runResolveFromDeviceLocation() {
+  clearErrors();
+  setLocateButtonBusy(true);
+  setLocateStatus("Using your device location…");
+  try {
+    const postcode = await postcodeFromDeviceLocation();
+    const searchInput = $("search-input");
+    if (searchInput) searchInput.value = postcode;
+    const uprnInput = $("uprn-input");
+    if (uprnInput) uprnInput.value = "";
+    await runResolve();
+    setLocateStatus(`Using nearby postcode: ${postcode}`, "success");
+  } catch (e) {
+    const message =
+      e?.code === 1
+        ? "Location permission denied. Allow location access and try again."
+        : e?.message || "Could not use your device location.";
+    setError("global", message);
+    setLocateStatus(message, "error");
+    renderAllPanels(state);
+  } finally {
+    setLocateButtonBusy(false);
   }
 }
 
@@ -232,6 +311,7 @@ function onAddressChange() {
 
 function init() {
   $("search-btn")?.addEventListener("click", () => runResolve());
+  $("locate-btn")?.addEventListener("click", () => runResolveFromDeviceLocation());
   $("search-input")?.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") runResolve();
   });

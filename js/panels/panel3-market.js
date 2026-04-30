@@ -5,8 +5,10 @@ import {
   hpiIndexForTransaction,
 } from "../normalisers/hpi.js";
 
-const MAX_TX = 5;
+const DEFAULT_TX = 3;
+const EXPANDED_TX = 10;
 const COLS = 8;
+let isMarketExpanded = false;
 
 function escapeHtml(s) {
   return String(s)
@@ -121,7 +123,9 @@ export function renderPanelMarket(state) {
   const ppi = state.normalised?.ppi || {};
   const hpi = state.normalised?.hpi || {};
   const txsAll = ppi.transactions || [];
-  const txs = txsAll.slice(0, MAX_TX).map((t) => {
+  const canExpand = txsAll.length > DEFAULT_TX;
+  const visibleCount = isMarketExpanded ? EXPANDED_TX : DEFAULT_TX;
+  const txs = txsAll.slice(0, visibleCount).map((t) => {
     const adj = hpiAdjustedForRow(t, hpi);
     const adjPerFt =
       adj != null ? hpiAdjustedPerSqft(adj, t.floorAreaSqft) : null;
@@ -180,6 +184,24 @@ export function renderPanelMarket(state) {
           }</tbody>
         </table>
       </div>
+      ${
+        canExpand
+          ? `<div class="mt-3">
+               <button
+                 id="market-toggle-btn"
+                 type="button"
+                 class="text-xs text-[#60A5FA] hover:underline"
+               >${isMarketExpanded ? "Show fewer" : "...see more..."}</button>
+             </div>`
+          : ""
+      }
     </div>
   `;
+
+  if (canExpand) {
+    root.querySelector("#market-toggle-btn")?.addEventListener("click", () => {
+      isMarketExpanded = !isMarketExpanded;
+      renderPanelMarket(state);
+    });
+  }
 }

@@ -1,6 +1,10 @@
 import { el } from "../utils/dom.js";
 import { formatNumber } from "../utils/format.js";
 
+const DEFAULT_SCHOOLS = 5;
+const EXPANDED_SCHOOLS = 10;
+let isSchoolsExpanded = false;
+
 export function renderPanelSchools(state) {
   const root = el("panel-schools");
   if (!root) return;
@@ -17,7 +21,9 @@ export function renderPanelSchools(state) {
 
   const sch = state.normalised?.schools || {};
   const list = sch.schools || [];
-  const rows = list.slice(0, 10).map((s) => {
+  const canExpand = list.length > DEFAULT_SCHOOLS;
+  const visibleCount = isSchoolsExpanded ? EXPANDED_SCHOOLS : DEFAULT_SCHOOLS;
+  const rows = list.slice(0, visibleCount).map((s) => {
     const ofsted = s.ofsted ? escapeHtml(s.ofsted) : "—";
     const report = s.lastReport ? escapeHtml(s.lastReport) : "—";
     const nameCell = s.reportUrl
@@ -34,13 +40,33 @@ export function renderPanelSchools(state) {
   });
 
   root.innerHTML = `
-    <div class="overflow-x-auto">
-      <table class="w-full text-left text-xs min-w-[420px]">
-        <thead><tr class="text-[#8E95A3]"><th class="pb-2">School</th><th class="pb-2">Category</th><th class="pb-2">Ofsted</th><th class="pb-2">Dist</th><th class="pb-2">Last report</th></tr></thead>
-        <tbody>${rows.length ? rows.join("") : `<tr><td colspan="5" class="text-[#8E95A3] py-2">No schools returned.</td></tr>`}</tbody>
-      </table>
+    <div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs min-w-[420px]">
+          <thead><tr class="text-[#8E95A3]"><th class="pb-2">School</th><th class="pb-2">Category</th><th class="pb-2">Ofsted</th><th class="pb-2">Dist</th><th class="pb-2">Last report</th></tr></thead>
+          <tbody>${rows.length ? rows.join("") : `<tr><td colspan="5" class="text-[#8E95A3] py-2">No schools returned.</td></tr>`}</tbody>
+        </table>
+      </div>
+      ${
+        canExpand
+          ? `<div class="mt-3">
+               <button
+                 id="schools-toggle-btn"
+                 type="button"
+                 class="text-xs text-[#60A5FA] hover:underline"
+               >${isSchoolsExpanded ? "Show fewer" : "...see more..."}</button>
+             </div>`
+          : ""
+      }
     </div>
   `;
+
+  if (canExpand) {
+    root.querySelector("#schools-toggle-btn")?.addEventListener("click", () => {
+      isSchoolsExpanded = !isSchoolsExpanded;
+      renderPanelSchools(state);
+    });
+  }
 }
 
 function escapeHtml(s) {

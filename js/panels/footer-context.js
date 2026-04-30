@@ -1,5 +1,11 @@
 import { el } from "../utils/dom.js";
-import { formatNumber, toFloat } from "../utils/format.js";
+import { formatGbp, formatNumber, toFloat, toInt } from "../utils/format.js";
+import {
+  adjustPriceForHpi,
+  hpiIndexForTransaction,
+} from "../normalisers/hpi.js";
+
+const MAX_TX_EXPLANATIONS = 5;
 
 function escapeHtml(s) {
   return String(s)
@@ -54,6 +60,57 @@ function hpiBlock(state) {
   const ppiHpiNote = ppiHpiMeta?.hpiNote
     ? escapeHtml(String(ppiHpiMeta.hpiNote))
     : "";
+  const txs = Array.isArray(ppi.transactions) ? ppi.transactions.slice(0, MAX_TX_EXPLANATIONS) : [];
+  const targetIdx = toFloat(hpi.index);
+  const targetMonth = hpi.month || "reference month";
+
+  const adjustmentItems = txs
+    .map((t, idx) => {
+      const salePrice = toInt(t.price);
+      const saleMonth = String(t.saleMonth || (t.date ? String(t.date).slice(0, 7) : "")).trim();
+      const baseIdxWorker = toFloat(t.hpiSale);
+      const baseIdxClient = hpiIndexForTransaction(hpi.series, saleMonth);
+      const baseIdx = baseIdxWorker > 0 ? baseIdxWorker : baseIdxClient;
+      const workerAdjusted = toInt(t.adjustedPrice);
+      const fallbackAdjusted =
+        salePrice > 0 && baseIdx > 0 && targetIdx > 0
+          ? adjustPriceForHpi(salePrice, baseIdx, targetIdx)
+          : null;
+      const adjusted = workerAdjusted > 0 ? workerAdjusted : fallbackAdjusted;
+      const factor = baseIdx > 0 && targetIdx > 0 ? targetIdx / baseIdx : null;
+      const addr = escapeHtml(String(t.displayAddress || "Comparable sale"));
+
+      if (!adjusted || !saleMonth || !Number.isFinite(baseIdx) || baseIdx <= 0 || targetIdx <= 0) {
+        return `
+          <li class="text-xs text-[#8E95A3] leading-relaxed">
+            <span class="text-[#C7CBD4]">${idx + 1}. ${addr}:</span>
+            no HPI adjustment could be calculated for this row because one or more required inputs were missing (sale price, sale month, sale-month index, or reference index).
+          </li>
+        `;
+      }
+
+      return `
+        <li class="text-xs text-[#8E95A3] leading-relaxed">
+          <span class="text-[#C7CBD4]">${idx + 1}. ${addr} (${escapeHtml(saleMonth)}):</span>
+          sale price ${formatGbp(salePrice)} multiplied by (${formatNumber(targetIdx, 2)} reference index for ${escapeHtml(targetMonth)} ÷ ${formatNumber(baseIdx, 2)} index for ${escapeHtml(saleMonth)}) = multiplier ${formatNumber(factor, 4)}, giving adjusted price ${formatGbp(adjusted)}.
+          <div class="mt-1 font-mono text-[11px] text-[#60A5FA]">
+            ${formatGbp(salePrice)} × (${formatNumber(targetIdx, 2)} ÷ ${formatNumber(baseIdx, 2)}) = ${formatGbp(adjusted)}
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+
+  const adjustmentBlock = txs.length
+    ? `
+      <section class="mt-4">
+        <h4 class="text-xs font-medium text-[#C7CBD4] uppercase tracking-wide mb-2">Per-sale HPI adjustment maths</h4>
+        <ol class="space-y-2">
+          ${adjustmentItems}
+        </ol>
+      </section>
+    `
+    : "";
 
   return `
     <section>
@@ -63,6 +120,7 @@ function hpiBlock(state) {
       ${hpiNote ? `<p class="text-xs text-[#8E95A3] mt-2">${hpiNote}</p>` : ""}
       ${ppiNote ? `<p class="text-xs text-[#8E95A3] mt-1">${ppiNote}</p>` : ""}
       ${ppiHpiNote ? `<p class="text-xs text-[#8E95A3] mt-2">${ppiHpiNote}</p>` : ""}
+      ${adjustmentBlock}
     </section>
   `;
 }

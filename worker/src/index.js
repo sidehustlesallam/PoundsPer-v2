@@ -721,7 +721,7 @@ WHERE {
   OPTIONAL { ?addr lrcommon:town ?town }
 }
 ORDER BY DESC(?date)
-LIMIT 5
+LIMIT 10
 `.trim();
 }
 
