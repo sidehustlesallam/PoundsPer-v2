@@ -114,7 +114,8 @@ function populateAddressSelect(results) {
   for (const r of results) {
     const opt = document.createElement("option");
     opt.value = r.id;
-    opt.textContent = r.label || r.postcode;
+    const marker = r.hasEpc ? "[EPC]" : "[No EPC]";
+    opt.textContent = `${marker} ${r.label || r.postcode}`;
     opt.dataset.payload = JSON.stringify(r);
     sel.appendChild(opt);
   }

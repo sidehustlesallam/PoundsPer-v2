@@ -40,7 +40,7 @@ Defined **once** in `js/api/resolve.js` as `API_BASE`. `js/utils/fetch.js` uses 
 
 | Route | Behaviour |
 |-------|-----------|
-| `GET /resolve?input=` | **Postcode:** postcodes.io geocode + EPC domestic search by postcode (many rows); centroid fallback if no EPC. **UPRN:** if `input` is 7–12 digits (spaces ignored), EPC domestic search by UPRN; each row geocoded via its postcode for `lat`/`lon`/LA. **Zoopla URL:** not implemented — treat as future work. |
+| `GET /resolve?input=` | **Postcode:** postcodes.io geocode + EPC domestic search by postcode (many rows) **merged with Land Registry PPD distinct-address fallback rows** so non-EPC properties can still be listed; then natural/sequential sort. **UPRN:** if `input` is 7–12 digits (spaces ignored), EPC domestic search by UPRN; each row geocoded via its postcode for `lat`/`lon`/LA. Response rows include `hasEpc` + `addressLine` so the UI can mark `[EPC]`/`[No EPC]`. **Zoopla URL:** not implemented — treat as future work. |
 | `GET /geo?postcode=` | postcodes.io |
 | `GET /address?uprn=` | EPC domestic search by UPRN (first row address fields) |
 | `GET /epc/search?postcode=` \| `uprn=` | Proxies EPC API (auth required) |
@@ -70,7 +70,7 @@ When replacing placeholders, keep normalisers as the single shape the panels rea
 ## Frontend data flow
 
 1. User enters **postcode** and/or **UPRN** (`index.html`); Search calls `resolveAddresses()` → `/resolve` with whichever token applies (UPRN wins when the UPRN field holds 7–12 digits).
-2. Dropdown populated from normalised resolve results; user picks a row.
+2. Dropdown populated from normalised resolve results; options are source-marked as `[EPC]` / `[No EPC]` and sorted naturally by address number/text.
 3. `loadDatasetForSelection()` in `app.js` runs parallel GETs (geo, EPC search, PPI, HPI, schools, transport, broadband, flood, radon), then EPC certificate + `/address` when UPRN/lmk available.
 4. The same dataset load also fetches nearby postcode candidates from postcodes.io (`lat/lon`) for the nearby-postcodes shortcut panel.
 5. All slices pass through `js/normalisers/` → `state.normalised`.
@@ -96,6 +96,8 @@ EPC hyphenated keys are normalised in `epc.js` (`firstDefined` helpers). Notable
 - Floor area → `floorAreaSqm` / `floorAreaSqft` on rows.
 
 Extend pick helpers if API shapes change.
+
+`normalisers/index.js` also keeps resolve-level `hasEpc` / `addressLine` so the address selector can label EPC coverage.
 
 ## Panels and DOM roots
 
@@ -144,6 +146,7 @@ Shows Ofsted-derived rows: name (link), category, rating, distance (mi), last re
 | HPI (UKHPI SPARQL) | **Live** for series + HPI-adjusted market columns when `localAuthority` is a district **name**; empty series usually means LA label mismatch or upstream SPARQL/bindings change |
 | Schools (Ofsted HTML) | **Live** (fragile to HTML changes; respect Ofsted terms/rate limits) |
 | Nearby postcode shortcut chips (client-side postcodes.io nearest) | **Live** (deduped, excludes active postcode, click to re-run resolve) |
+| Resolve dropdown EPC+fallback merge + source marker | **Live** (postcode resolve merges EPC + PPD-address fallback, natural-sort, UI labels `[EPC]` / `[No EPC]`) |
 | Transport, broadband, flood, radon | **Placeholder** JSON + `meta.note` |
 
 ## Land Registry SPARQL

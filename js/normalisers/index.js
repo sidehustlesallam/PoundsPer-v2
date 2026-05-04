@@ -18,6 +18,8 @@ export function normaliseResolveResponse(raw) {
       return {
         id: safeStr(x.id ?? ""),
         label: safeStr(x.label ?? pc),
+        addressLine: safeStr(x.addressLine ?? ""),
+        hasEpc: Boolean(x.hasEpc),
         postcode: pc,
         postcodeNormalized: normalizePostcode(pc),
         lat: Number(x.lat) || 0,

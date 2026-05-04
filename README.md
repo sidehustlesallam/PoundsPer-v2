@@ -21,7 +21,7 @@ https://royal-bar-6cc5.sidehustlesallam.workers.dev
 ## How the app works
 
 1. User enters a **UK postcode** and/or **UPRN** (separate fields in the header), or clicks **Use my location** (`#locate-btn`) to fill postcode from browser geolocation + postcodes.io nearest-postcode lookup. If the UPRN field contains **7–12 digits**, that value is sent to `/resolve`; otherwise the postcode field is used.
-2. `**/resolve`** returns dropdown rows (EPC-backed for postcode or UPRN, or postcodes.io centroid fallback when EPC has no rows for a postcode).
+2. `**/resolve`** returns dropdown rows (postcode mode now merges EPC rows with Land Registry PPD-address fallback rows so non-EPC properties can still appear; UPRN mode remains EPC-backed). Rows are natural-sorted and UI marks each option `[EPC]` or `[No EPC]`.
 3. User selects an address.
 4. `**loadDatasetForSelection()`** in `app.js` fetches in parallel: geo, EPC search, PPI, HPI, schools, **transport** (`/transport` with **lat/lon** from the selection), **broadband** (`/broadband` for the Utilities panel), **flood** + **radon** (`/flood`, `/radon` for the Risk panel), plus **nearby postcode candidates** via postcodes.io nearest-postcode lookup (`lat/lon`).
 5. Responses are **normalised** under `js/normalisers/` into `state.normalised`.
@@ -80,7 +80,7 @@ Each module has a normaliser. Rules include:
 - **PPI:** Integer prices, ISO dates, £/m² and £/ft² from area.
 - **Schools:** Miles from metres; Ofsted strings passed through.
 - **Transport / broadband / flood / radon:** Thin adapters over placeholder worker JSON; see `transport.js`, `broadband.js`, `flood.js`, `radon.js` under `js/normalisers/`.
-- **Geo / resolve / others:** See individual files under `js/normalisers/`.
+- **Geo / resolve / others:** Resolve normaliser now preserves `hasEpc` and `addressLine` for dropdown source markers and sorting context.
 - **HPI:** `hpi.js` maps `/hpi` worker `series` + `index` for month keys (`YYYY-MM`). **Market HPI columns prefer** per-row `adjustedPrice` from `/ppi/recent` (worker UKHPI enrichment: LA → region → UK). If those are null, the panel falls back to client-side math from `/hpi`.
 
 ---

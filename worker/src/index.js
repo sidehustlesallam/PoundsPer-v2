@@ -263,6 +263,8 @@ async function handleResolveByUprn(uprnDigits, env, origin) {
     results.push({
       id: `epc:${lmk}`,
       label,
+      addressLine: line,
+      hasEpc: true,
       postcode: rowPc || "",
       postcodeNormalized: pcNorm,
       lat: geo && geo.ok ? geo.lat : "",
@@ -350,6 +352,7 @@ async function handleResolve(url, env, origin) {
   const pcDisp = formatPostcode(pcNorm);
   const headers = epcAuthHeaders(env);
   const results = [];
+  const seenAddressKeys = new Set();
 
   if (headers) {
     const epcSearchUrl = `${EPC_BASE}/domestic/search?${new URLSearchParams({
@@ -378,9 +381,13 @@ async function handleResolve(url, env, origin) {
         const label = line
           ? `${line} — ${rowPc}`
           : `${rowPc} — EPC ${lmk.slice(0, 8)}…`;
+        const addrKey = normAddrMatch(`${line} ${rowPc}`);
+        if (addrKey) seenAddressKeys.add(addrKey);
         results.push({
           id: `epc:${lmk}`,
           label,
+          addressLine: line,
+          hasEpc: true,
           postcode: rowPc,
           postcodeNormalized: normalizePostcode(rowPc),
           lat: geo.lat,
@@ -397,10 +404,46 @@ async function handleResolve(url, env, origin) {
     }
   }
 
+  // Fallback source for addresses that may not have EPC rows:
+  // Land Registry PPD addresses (distinct address forms by postcode).
+  // This is still not a full national address database, but it helps surface
+  // non-EPC properties that have appeared in PPD data.
+  const ppdFallbackRows = await fetchDistinctPpdAddressesForPostcode(pcDisp);
+  for (const row of ppdFallbackRows) {
+    const line = [row.paon, row.saon, row.street, row.town]
+      .filter((x) => x && String(x).trim())
+      .join(", ");
+    const rowPc = formatPostcode(normalizePostcode(row.postcode || pcDisp));
+    const addrKey = normAddrMatch(`${line} ${rowPc}`);
+    if (!addrKey || seenAddressKeys.has(addrKey)) continue;
+    seenAddressKeys.add(addrKey);
+    const label = line ? `${line} — ${rowPc}` : rowPc;
+    results.push({
+      id: `ppd:${addrKey}`,
+      label,
+      addressLine: line,
+      hasEpc: false,
+      postcode: rowPc,
+      postcodeNormalized: normalizePostcode(rowPc),
+      lat: geo.lat,
+      lon: geo.lon,
+      localAuthority: geo.localAuthority || "",
+      region: geo.region || "",
+      country: geo.country || "",
+      parliamentary_constituency: geo.parliamentary_constituency || "",
+      uprn: "",
+      lmkKey: "",
+    });
+  }
+
+  results.sort((a, b) => compareAddressResults(a, b));
+
   if (results.length === 0) {
     results.push({
       id: `pc:${pcNorm}`,
       label: `${pcDisp} — ${geo.localAuthority || "UK"}`,
+      addressLine: "",
+      hasEpc: false,
       postcode: pcDisp,
       postcodeNormalized: pcNorm,
       lat: geo.lat,
@@ -426,6 +469,33 @@ async function handleResolve(url, env, origin) {
     200,
     origin
   );
+}
+
+function extractPrimaryAddressText(result) {
+  const line = String(result?.addressLine || "").trim();
+  if (line) return line;
+  const label = String(result?.label || "").trim();
+  if (!label) return "";
+  return label.split("—")[0].trim();
+}
+
+function firstNumberInAddress(s) {
+  const m = String(s || "").match(/\b(\d+)\b/);
+  if (!m) return Number.POSITIVE_INFINITY;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+}
+
+function compareAddressResults(a, b) {
+  const aAddr = extractPrimaryAddressText(a);
+  const bAddr = extractPrimaryAddressText(b);
+  const aNum = firstNumberInAddress(aAddr);
+  const bNum = firstNumberInAddress(bAddr);
+  if (aNum !== bNum) return aNum - bNum;
+  return aAddr.localeCompare(bAddr, "en-GB", {
+    numeric: true,
+    sensitivity: "base",
+  });
 }
 
 async function handleGeo(url, origin) {
@@ -723,6 +793,43 @@ WHERE {
 ORDER BY DESC(?date)
 LIMIT 10
 `.trim();
+}
+
+function buildPpdDistinctAddressesSparql(postcodeFormatted) {
+  const lit = sparqlStringLiteral(postcodeFormatted);
+  return `
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX lrppi: <http://landregistry.data.gov.uk/def/ppi/>
+PREFIX lrcommon: <http://landregistry.data.gov.uk/def/common/>
+
+SELECT DISTINCT ?paon ?saon ?street ?town ?postcode
+WHERE {
+  VALUES ?postcode { "${lit}"^^xsd:string }
+  ?addr lrcommon:postcode ?postcode .
+  ?transx lrppi:propertyAddress ?addr .
+  OPTIONAL { ?addr lrcommon:paon ?paon }
+  OPTIONAL { ?addr lrcommon:saon ?saon }
+  OPTIONAL { ?addr lrcommon:street ?street }
+  OPTIONAL { ?addr lrcommon:town ?town }
+}
+LIMIT 600
+`.trim();
+}
+
+async function fetchDistinctPpdAddressesForPostcode(postcodeFormatted) {
+  const query = buildPpdDistinctAddressesSparql(postcodeFormatted);
+  const { res, parsed } = await landRegistrySparql(query);
+  if (!res.ok || !parsed || !parsed.results || !Array.isArray(parsed.results.bindings)) {
+    return [];
+  }
+  const rows = parsed.results.bindings.map((b) => ({
+    paon: sparqlBindingValue(b, "paon"),
+    saon: sparqlBindingValue(b, "saon"),
+    street: sparqlBindingValue(b, "street"),
+    town: sparqlBindingValue(b, "town"),
+    postcode: sparqlBindingValue(b, "postcode") || postcodeFormatted,
+  }));
+  return rows;
 }
 
 /**

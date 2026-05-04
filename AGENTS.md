@@ -7,7 +7,7 @@
 - **Docs sync rule:** When behaviour, routes, panel contracts, or orchestration change, update **all three** docs in the same task/PR: `AGENTS.md`, `README.md`, and `docs/DEVELOPMENT.md`.
 - **Core contracts:** Do not rename `js/panels/panel*.js` or panel DOM ids without instruction. Keep panel input shapes stable through `js/normalisers/`.
 - **High-risk integrations:** Ofsted parsing (HTML regex) and Land Registry SPARQL assumptions are fragile; retest these paths after related changes.
-- **Current scope:** Resolve supports postcode or 7-12 digit UPRN (UPRN wins). Zoopla URLs are not implemented. Transport/utilities/risk routes are still worker placeholders.
+- **Current scope:** Resolve supports postcode or 7-12 digit UPRN (UPRN wins). Postcode resolve now merges EPC rows with Land Registry PPD-address fallback rows, sorts addresses in natural/sequential order, and tags rows as EPC vs non-EPC for the dropdown. Zoopla URLs are not implemented. Transport/utilities/risk routes are still worker placeholders.
 
 ---
 
@@ -53,7 +53,7 @@ Use this block when reopening the project: it maps the tree, entry points, and w
     ├── state/
     │   └── index.js           # state { selection, loading, errors, raw, normalised }; resetState, setSelection, setLoading, setError, clearErrors
     ├── normalisers/
-    │   ├── index.js           # normaliseResolveResponse, Geo, Address, EPC, PPI, HPI, Schools, Transport, Broadband, Flood, Radon (+ re-exports from hpi.js)
+    │   ├── index.js           # normaliseResolveResponse (+ hasEpc/addressLine), Geo, Address, EPC, PPI, HPI, Schools, Transport, Broadband, Flood, Radon (+ re-exports from hpi.js)
     │   ├── epc.js             # Hyphenated EPC keys → rows + certificate shape (certificateDate = inspection || lodgement)
     │   ├── ppi.js             # transactions + worker HPI fields (adjustedPrice, hpiSale, …)
     │   ├── hpi.js             # series + adjustPriceForHpi / hpiIndexForTransaction (client fallback for market/footer)
@@ -84,6 +84,7 @@ Use this block when reopening the project: it maps the tree, entry points, and w
 
 ### Orchestration & state (single mental model)
 
+- **Resolve dropdown behaviour:** `populateAddressSelect` prefixes each row with `[EPC]` or `[No EPC]` from `hasEpc` so users can see source coverage at selection time.
 - **`loadDatasetForSelection(sel)`** (`app.js`): `resetState` → set selection → parallel `Promise.allSettled` for geo, EPC search, PPI, HPI, schools, transport (uses **selection lat/lon**), broadband, flood, radon (use **postcode**), and nearby postcode candidates (uses **selection lat/lon** via postcodes.io); then normalises slices; then optional **EPC certificate** (`lmkKey` from selection or first EPC row) and **`/address`** when UPRN known; maps `state.errors` fetch keys to panel keys; `renderAllPanels(state)`.
 - **`state.raw` keys** (filled by fetches): `geo`, `epcSearch`, `ppi`, `hpi`, `schools`, `transport`, `broadband`, `flood`, `radon`, `nearbyPostcodes`, `epcCertificate`, `address`.
 - **`state.normalised` slices** (assigned in `app.js`): `geo`, `address`, `epcSearch`, `epcCertificate`, `ppi`, `hpi`, `schools`, `transport`, `broadband`, `flood`, `radon`, `nearbyPostcodes`. `js/state/index.js` also defines `identity: {}`, but **`app.js` never fills it** — the Registered Asset (`panel1-identity`) reads `epcSearch`, `epcCertificate`, and `address` instead. Panels read **`normalised`**, not `raw`.
@@ -93,7 +94,7 @@ Use this block when reopening the project: it maps the tree, entry points, and w
 
 | Worker route (GET) | Worker handler area | Client API | Normaliser | Panel / footer |
 |--------------------|---------------------|-------------|--------------|----------------|
-| `/resolve` | `handleResolve`, UPRN branch | `resolve.js` | `normalisers/index.js` `normaliseResolveResponse` | Populates `#address-select`; selection drives rest |
+| `/resolve` | `handleResolve`, UPRN branch | `resolve.js` | `normalisers/index.js` `normaliseResolveResponse` | Populates `#address-select`; postcode mode merges EPC + PPD-address fallback, natural-sort, then UI labels `[EPC]` / `[No EPC]` |
 | `/geo`, `/address` | `handleGeo`, `handleAddress` | `geo.js` | `normaliseGeoResponse`, `normaliseAddressResponse` | Map + identity / address line |
 | `/epc/search`, `/epc/certificate` | `handleEpcSearch`, `handleEpcCertificate` | `epc.js` | `epc.js` | Identity, market EPC col |
 | `/ppi/recent`, `/hpi` | `handlePpiRecent`, `handleHpi` + SPARQL helpers | `ppi.js`, `hpi.js` | `ppi.js`, `hpi.js` | `panel3-market.js`, `footer-context.js` |
