@@ -12,8 +12,6 @@ import {
   hpiIndexForTransaction,
 } from "../normalisers/hpi.js";
 
-let tooltipCleanup = null;
-
 function row(k, v) {
   return `<div class="flex justify-between gap-2 py-1 border-b border-[#1F242D]"><span class="text-[#8E95A3]">${k}</span><span class="font-mono text-[#C7CBD4] text-right">${v}</span></div>`;
 }
@@ -21,10 +19,6 @@ function row(k, v) {
 export function renderPanelIdentity(state) {
   const root = el("panel-identity");
   if (!root) return;
-  if (typeof tooltipCleanup === "function") {
-    tooltipCleanup();
-    tooltipCleanup = null;
-  }
 
   const err = state.errors?.identity;
   if (state.loading && !state.normalised?.epcSearch?.rows?.length) {
@@ -48,6 +42,7 @@ export function renderPanelIdentity(state) {
     searchRows[0];
 
   const title = propertyTitleWithPostcode(state, addr, matched);
+  const matchedTx = findMatchedTransaction(state, addr, matched, title);
 
   const floorSqm =
     Number(cert.floorAreaSqm || matched?.floorAreaSqm || 0) || 0;
@@ -64,11 +59,11 @@ export function renderPanelIdentity(state) {
 
   const rows = [];
   rows.push(row("UPRN", escapeHtml(matched?.uprn || addr.uprn || state.selection?.uprn || "—")));
-  rows.push(row("Last sale", escapeHtml(lastSaleTextForProperty(state, title))));
+  rows.push(row("Last sale", escapeHtml(lastSaleTextForProperty(matchedTx))));
   rows.push(
     row(
       "HPI projection",
-      escapeHtml(hpiProjectionTextForProperty(state, title, floorSqft))
+      escapeHtml(hpiProjectionTextForProperty(state, matchedTx, floorSqft))
     )
   );
   rows.push(
@@ -101,63 +96,7 @@ export function renderPanelIdentity(state) {
   root.innerHTML = `
     <h3 class="text-sm font-medium text-[#C7CBD4] mb-3">${escapeHtml(title)}</h3>
     <div class="text-xs">${rows.join("")}</div>
-    <div class="mt-3">
-      <button
-        type="button"
-        id="identity-hpi-info-btn"
-        class="inline-flex items-center gap-2 text-xs text-[#8E95A3] hover:text-[#C7CBD4] transition-colors"
-        aria-expanded="false"
-        aria-controls="identity-hpi-info-tip"
-      >
-        <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#1F242D] font-mono text-[10px]">i</span>
-        HPI projection explanation
-      </button>
-      <div
-        id="identity-hpi-info-tip"
-        class="hidden mt-2 rounded border border-[#1F242D] bg-[#0B0E13] p-2 text-xs text-[#8E95A3] leading-relaxed"
-      >
-        <span class="text-[#C7CBD4]">HPI-adjusted</span> revalues the matched last sale using the same UKHPI method as Market Evidence (worker value first, then HPI series fallback).
-        <span class="text-[#C7CBD4]">Area-projected</span> uses market average HPI-adjusted £/ft² and multiplies it by this property's floor area.
-      </div>
-    </div>
   `;
-
-  const infoBtn = root.querySelector("#identity-hpi-info-btn");
-  const infoTip = root.querySelector("#identity-hpi-info-tip");
-  if (infoBtn && infoTip) {
-    const closeTip = () => {
-      infoTip.classList.add("hidden");
-      infoBtn.setAttribute("aria-expanded", "false");
-    };
-
-    infoBtn.addEventListener("click", () => {
-      const isOpen = !infoTip.classList.contains("hidden");
-      if (isOpen) {
-        closeTip();
-      } else {
-        infoTip.classList.remove("hidden");
-        infoBtn.setAttribute("aria-expanded", "true");
-      }
-    });
-
-    const onDocPointerDown = (ev) => {
-      const target = ev.target;
-      if (!(target instanceof Node)) return;
-      if (infoBtn.contains(target) || infoTip.contains(target)) return;
-      closeTip();
-    };
-
-    const onDocKeyDown = (ev) => {
-      if (ev.key === "Escape") closeTip();
-    };
-
-    document.addEventListener("pointerdown", onDocPointerDown);
-    document.addEventListener("keydown", onDocKeyDown);
-    tooltipCleanup = () => {
-      document.removeEventListener("pointerdown", onDocPointerDown);
-      document.removeEventListener("keydown", onDocKeyDown);
-    };
-  }
 }
 
 function propertyTitleWithPostcode(state, addr, matched) {
@@ -181,25 +120,22 @@ function propertyTitleWithPostcode(state, addr, matched) {
   return `${base} — ${postcode}`;
 }
 
-function lastSaleTextForProperty(state, propertyTitle) {
-  const match = findMatchedTransaction(state, propertyTitle);
-  if (!match) return "—";
-  const saleDate = formatDateIso(match.date || "");
-  const salePrice = Number(match.price) > 0 ? formatGbp(match.price) : "";
+function lastSaleTextForProperty(matchTx) {
+  if (!matchTx) return "—";
+  const saleDate = formatDateIso(matchTx.date || "");
+  const salePrice = Number(matchTx.price) > 0 ? formatGbp(matchTx.price) : "";
   if (salePrice && saleDate) return `${salePrice} on ${saleDate}`;
   if (salePrice) return salePrice;
   if (saleDate) return saleDate;
   return "—";
 }
 
-function hpiProjectionTextForProperty(state, propertyTitle, floorSqft) {
+function hpiProjectionTextForProperty(state, matchedTx, floorSqft) {
   const txs = Array.isArray(state.normalised?.ppi?.transactions)
     ? state.normalised.ppi.transactions
     : [];
   const hpi = state.normalised?.hpi || {};
-  const match = findMatchedTransaction(state, propertyTitle);
-
-  const hpiAdjusted = matchedTransactionAdjustedPrice(match, hpi);
+  const hpiAdjusted = matchedTransactionAdjustedPrice(matchedTx, hpi);
   let hpiPart = "HPI-adjusted: —";
   if (hpiAdjusted != null && hpiAdjusted > 0) {
     hpiPart = `HPI-adjusted: ${formatGbp(hpiAdjusted)}`;
@@ -252,18 +188,67 @@ function marketAverageAdjustedPerSqft(txs, hpi) {
   return sumAdj / sumSqft;
 }
 
-function findMatchedTransaction(state, propertyTitle) {
+function findMatchedTransaction(state, addr, matched, propertyTitle) {
   const txs = state.normalised?.ppi?.transactions || [];
   if (!Array.isArray(txs) || !txs.length) return null;
-  const propertyKey = normAddr(propertyTitle);
-  if (!propertyKey) return null;
-  return (
-    txs.find((t) => {
-      const txAddr = normAddr(t?.displayAddress || "");
-      if (!txAddr) return false;
-      return txAddr.includes(propertyKey) || propertyKey.includes(txAddr);
-    }) || null
-  );
+  const candidates = propertyAddressCandidates(state, addr, matched, propertyTitle);
+  if (!candidates.length) return null;
+
+  let best = null;
+  let bestScore = 0;
+  for (const tx of txs) {
+    const txAddr = normAddr(tx?.displayAddress || "");
+    if (!txAddr) continue;
+    for (const c of candidates) {
+      const score = addressSimilarityScore(c, txAddr);
+      if (score > bestScore) {
+        bestScore = score;
+        best = tx;
+      }
+    }
+  }
+  return bestScore >= 8 ? best : null;
+}
+
+function propertyAddressCandidates(state, addr, matched, propertyTitle) {
+  const out = [];
+  const push = (v) => {
+    const n = normAddr(v);
+    if (!n) return;
+    if (!out.includes(n)) out.push(n);
+  };
+
+  push(`${addr?.line1 || ""} ${addr?.line2 || ""} ${addr?.line3 || ""}`);
+  push(matched?.address || "");
+  push(propertyTitle || "");
+  const selLabel = String(state.selection?.label || "");
+  push(selLabel.split(" — ")[0] || "");
+  return out;
+}
+
+function addressSimilarityScore(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 100;
+  if (a.includes(b) || b.includes(a)) return 60;
+
+  const ta = tokens(a);
+  const tb = new Set(tokens(b));
+  if (!ta.length || !tb.size) return 0;
+
+  let score = 0;
+  for (const t of ta) {
+    if (tb.has(t)) score += t.length >= 4 ? 3 : 1;
+  }
+
+  const numsA = ta.filter((t) => /^\d+[a-z]?$/.test(t));
+  if (numsA.length && numsA.some((n) => tb.has(n))) score += 4;
+  return score;
+}
+
+function tokens(s) {
+  return normAddr(s)
+    .split(" ")
+    .filter((t) => t && t.length > 1);
 }
 
 function normAddr(s) {

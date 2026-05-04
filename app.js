@@ -181,6 +181,35 @@ async function runResolveForPostcode(postcode) {
   await runResolve();
 }
 
+function firstAddressLineFromResolveResult(result) {
+  const label = String(result?.label || "").trim();
+  if (!label) return "";
+  const line = label.split(" — ")[0]?.trim() || "";
+  return line;
+}
+
+async function enrichNearbyPostcodesWithFirstLine(nearbyPostcodes) {
+  const list = Array.isArray(nearbyPostcodes) ? nearbyPostcodes : [];
+  const enriched = await Promise.all(
+    list.map(async (item) => {
+      const postcode = String(item?.postcode || "").trim();
+      if (!postcode) return { ...item, firstLine: "" };
+      try {
+        const raw = await resolveAddresses(postcode);
+        const norm = normaliseResolveResponse(raw);
+        const first = Array.isArray(norm.results) ? norm.results[0] : null;
+        return {
+          ...item,
+          firstLine: firstAddressLineFromResolveResult(first),
+        };
+      } catch {
+        return { ...item, firstLine: "" };
+      }
+    })
+  );
+  return enriched;
+}
+
 async function loadDatasetForSelection(sel) {
   resetState();
   setSelection(sel);
@@ -261,6 +290,10 @@ async function loadDatasetForSelection(sel) {
       state.raw.nearbyPostcodes || {},
       sel.postcodeNormalized || sel.postcode || ""
     );
+    state.normalised.nearbyPostcodes.postcodes =
+      await enrichNearbyPostcodesWithFirstLine(
+        state.normalised.nearbyPostcodes.postcodes || []
+      );
   } catch (e) {
     setError("nearbyPostcodes", e.message);
     state.normalised.nearbyPostcodes = normaliseNearbyPostcodesResponse({}, "");

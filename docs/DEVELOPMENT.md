@@ -11,6 +11,7 @@ Use this file when reopening the project or a new chat session. It describes sta
 5. **EPC-dependent routes** need Worker secrets `EPC_EMAIL` + `EPC_API_KEY` (see below).
 6. **Panels 5–7** (transport, utilities, risk) are still **worker placeholders** — see [Transport / utilities / risk (placeholders)](#transport--utilities--risk-placeholders). No separate `transport.js` / `utilities.js` / `risk.js` worker modules in the repo yet.
 7. **Panel 8** (`panel-nearby-postcodes`) uses a **client-side** postcodes.io nearest lookup (`lat/lon`) to show up to 4 deduped nearby postcode shortcut chips (excluding the active postcode), and clicking a chip re-runs resolve.
+8. **Docs maintenance rule:** whenever behaviour/contracts/orchestration change, update this file, [`README.md`](../README.md), and [`AGENTS.md`](../AGENTS.md) in the same task/PR.
 
 ## Stack constraints
 
@@ -119,8 +120,7 @@ Extend pick helpers if API shapes change.
 - HPI projection line with two values:
   - matched-sale HPI-adjusted price (worker `adjustedPrice` first, then `/hpi` fallback),
   - area projection = market-average HPI-adjusted £/ft² × subject floor area.
-
-It also includes a tap/click-friendly explainer toggle for projection maths (mobile-safe; outside click/tap and `Escape` close).
+- Last-sale/HPI matching now uses weighted address similarity (including house-number tokens) to avoid brittle strict-string misses.
 
 ### Map panel (important)
 

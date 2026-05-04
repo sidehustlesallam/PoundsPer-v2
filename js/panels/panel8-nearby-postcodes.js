@@ -38,10 +38,19 @@ export function renderPanelNearbyPostcodes(state) {
       <button
         type="button"
         data-nearby-postcode="${escapeHtml(x.postcode)}"
-        class="rounded-md border border-[#1F242D] bg-[#0B0E13] px-3 py-2 text-sm font-mono text-[#60A5FA] hover:border-[#60A5FA]/60 hover:text-[#93C5FD] transition-colors"
+        class="rounded-md border border-[#1F242D] bg-[#0B0E13] px-3 py-2 text-left hover:border-[#60A5FA]/60 transition-colors"
       >
-        ${escapeHtml(x.postcode)}
-        ${x.distanceMetres > 0 ? `<span class="ml-2 text-[#8E95A3] text-xs">~${formatNumber(x.distanceMetres, 0)}m</span>` : ""}
+        <div class="text-sm font-mono text-[#60A5FA]">${escapeHtml(x.postcode)}</div>
+        ${
+          x.firstLine
+            ? `<div class="mt-0.5 text-xs text-[#C7CBD4]">${escapeHtml(x.firstLine)}</div>`
+            : ""
+        }
+        ${
+          x.distanceMetres > 0
+            ? `<div class="mt-0.5 text-xs text-[#8E95A3]">~${formatNumber(x.distanceMetres, 0)}m</div>`
+            : ""
+        }
       </button>
     `
     )

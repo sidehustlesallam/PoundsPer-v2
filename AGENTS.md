@@ -4,6 +4,7 @@
 - **Stack constraints:** Frontend is build-less (`index.html`, `app.js`, `js/`); Tailwind + Leaflet are CDN-loaded. Worker is a single plain JS file at `worker/src/index.js`.
 - **Deploy model:** Deploy Worker via **Cloudflare Dashboard** copy/paste. **Do not add Wrangler** unless explicitly requested.
 - **Worker update reminder:** If `worker/src/index.js` changes in a task, explicitly remind the user to redeploy that updated worker code to Cloudflare Dashboard before testing/prod use.
+- **Docs sync rule:** When behaviour, routes, panel contracts, or orchestration change, update **all three** docs in the same task/PR: `AGENTS.md`, `README.md`, and `docs/DEVELOPMENT.md`.
 - **Core contracts:** Do not rename `js/panels/panel*.js` or panel DOM ids without instruction. Keep panel input shapes stable through `js/normalisers/`.
 - **High-risk integrations:** Ofsted parsing (HTML regex) and Land Registry SPARQL assumptions are fragile; retest these paths after related changes.
 - **Current scope:** Resolve supports postcode or 7-12 digit UPRN (UPRN wins). Zoopla URLs are not implemented. Transport/utilities/risk routes are still worker placeholders.
@@ -64,7 +65,7 @@ Use this block when reopening the project: it maps the tree, entry points, and w
     │   └── nearby-postcodes.js # up to 4 nearest postcode chips; deduped; excludes active postcode
     └── panels/
         ├── index.js           # renderAllPanels → panel1–8 then renderFooterContext
-        ├── panel1-identity.js # #panel-identity — Registered Asset (identity): EPC + address + cert + selection + last sale + HPI projections (+ tap-friendly explainer)
+        ├── panel1-identity.js # #panel-identity — Registered Asset (identity): EPC + address + cert + selection + last sale + HPI projections
         ├── panel2-map.js      # #panel-map — Leaflet; preserves #leaflet-map node across re-renders
         ├── panel3-market.js   # #panel-market — PPD table, HPI cols (worker adjustedPrice else client /hpi series)
         ├── panel4-schools.js  # #panel-schools — Ofsted rows, 3/10 expand
