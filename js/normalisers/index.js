@@ -5,6 +5,7 @@ import { normaliseTransportResponse } from "./transport.js";
 import { normaliseBroadbandResponse } from "./broadband.js";
 import { normaliseFloodResponse } from "./flood.js";
 import { normaliseRadonResponse } from "./radon.js";
+import { normaliseNearbyPostcodesResponse } from "./nearby-postcodes.js";
 
 /** Normalise /resolve response */
 export function normaliseResolveResponse(raw) {
@@ -80,3 +81,4 @@ export { normaliseTransportResponse } from "./transport.js";
 export { normaliseBroadbandResponse } from "./broadband.js";
 export { normaliseFloodResponse } from "./flood.js";
 export { normaliseRadonResponse } from "./radon.js";
+export { normaliseNearbyPostcodesResponse } from "./nearby-postcodes.js";

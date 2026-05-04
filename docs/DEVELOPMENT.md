@@ -5,11 +5,12 @@ Use this file when reopening the project or a new chat session. It describes sta
 ## Quick resume (next session)
 
 1. Read this file top to bottom, then skim [`AGENTS.md`](../AGENTS.md) and [`README.md`](../README.md).
-2. **Worker:** one script — [`worker/src/index.js`](../worker/src/index.js). Deploy only through the **Cloudflare Dashboard** (paste or upload); there is **no Wrangler** in the repo unless someone adds it deliberately.
+2. **Worker:** one script — [`worker/src/index.js`](../worker/src/index.js). Deploy only through the **Cloudflare Dashboard** (paste or upload); there is **no Wrangler** in the repo unless someone adds it deliberately. If `worker/src/index.js` changes, remind the user to redeploy before testing/prod use.
 3. **Frontend entry:** [`app.js`](../app.js) → `loadDatasetForSelection()` (parallel fetches after address pick) → [`js/normalisers/`](../js/normalisers/) → [`js/panels/`](../js/panels/) via `renderAllPanels`.
 4. **API origin:** [`js/api/resolve.js`](../js/api/resolve.js) exports `API_BASE`; all worker GETs go through [`js/utils/fetch.js`](../js/utils/fetch.js).
 5. **EPC-dependent routes** need Worker secrets `EPC_EMAIL` + `EPC_API_KEY` (see below).
 6. **Panels 5–7** (transport, utilities, risk) are still **worker placeholders** — see [Transport / utilities / risk (placeholders)](#transport--utilities--risk-placeholders). No separate `transport.js` / `utilities.js` / `risk.js` worker modules in the repo yet.
+7. **Panel 8** (`panel-nearby-postcodes`) uses a **client-side** postcodes.io nearest lookup (`lat/lon`) to show up to 4 deduped nearby postcode shortcut chips (excluding the active postcode), and clicking a chip re-runs resolve.
 
 ## Stack constraints
 
@@ -70,8 +71,9 @@ When replacing placeholders, keep normalisers as the single shape the panels rea
 1. User enters **postcode** and/or **UPRN** (`index.html`); Search calls `resolveAddresses()` → `/resolve` with whichever token applies (UPRN wins when the UPRN field holds 7–12 digits).
 2. Dropdown populated from normalised resolve results; user picks a row.
 3. `loadDatasetForSelection()` in `app.js` runs parallel GETs (geo, EPC search, PPI, HPI, schools, transport, broadband, flood, radon), then EPC certificate + `/address` when UPRN/lmk available.
-4. All slices pass through `js/normalisers/` → `state.normalised`.
-5. `js/panels/index.js` → `renderAllPanels(state)` (which ends by calling `renderFooterContext(state)`).
+4. The same dataset load also fetches nearby postcode candidates from postcodes.io (`lat/lon`) for the nearby-postcodes shortcut panel.
+5. All slices pass through `js/normalisers/` → `state.normalised`.
+6. `js/panels/index.js` → `renderAllPanels(state)` (panels 1–8; then `renderFooterContext(state)`).
 
 ## Page footer — data context (`js/panels/footer-context.js`)
 
@@ -79,7 +81,7 @@ Long-form **methodology and references** live in the footer (`#page-data-context
 
 `footer-context.js` renders:
 
-- **Tenure (EPC):** short explanation plus the current property’s reported tenure (same source the identity panel used).
+- **Tenure (EPC):** short explanation plus the current property’s reported tenure (same source the Registered Asset panel uses).
 - **HPI & market references:** UKHPI adjustment explanation, reference index line, and any `hpi.meta.note` / `ppi.meta.note` strings from the worker.
 - **Nearby schools (Ofsted):** worker `schools.meta.note` (search radius, parser status, errors).
 
@@ -105,7 +107,20 @@ Extend pick helpers if API shapes change.
 | Transport | `js/panels/panel5-transport.js` | `panel-transport` |
 | Utilities | `js/panels/panel6-utilities.js` | `panel-utilities` |
 | Risk | `js/panels/panel7-risk.js` | `panel-risk` |
+| Nearby Postcodes | `js/panels/panel8-nearby-postcodes.js` | `panel-nearby-postcodes` |
 | Notes & data context (footer) | `js/panels/footer-context.js` | `page-data-context-body` |
+
+### Registered Asset panel
+
+`panel1-identity.js` now shows:
+
+- title address with postcode appended (instead of a separate postcode row),
+- last sale price/date when a Land Registry transaction match is found,
+- HPI projection line with two values:
+  - matched-sale HPI-adjusted price (worker `adjustedPrice` first, then `/hpi` fallback),
+  - area projection = market-average HPI-adjusted £/ft² × subject floor area.
+
+It also includes a tap/click-friendly explainer toggle for projection maths (mobile-safe; outside click/tap and `Escape` close).
 
 ### Map panel (important)
 
@@ -128,6 +143,7 @@ Shows Ofsted-derived rows: name (link), category, rating, distance (mi), last re
 | PPI (PPD SPARQL) + EPC enrichment on worker | **Live** |
 | HPI (UKHPI SPARQL) | **Live** for series + HPI-adjusted market columns when `localAuthority` is a district **name**; empty series usually means LA label mismatch or upstream SPARQL/bindings change |
 | Schools (Ofsted HTML) | **Live** (fragile to HTML changes; respect Ofsted terms/rate limits) |
+| Nearby postcode shortcut chips (client-side postcodes.io nearest) | **Live** (deduped, excludes active postcode, click to re-run resolve) |
 | Transport, broadband, flood, radon | **Placeholder** JSON + `meta.note` |
 
 ## Land Registry SPARQL

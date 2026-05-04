@@ -5,6 +5,7 @@ import { renderPanelSchools } from "./panel4-schools.js";
 import { renderPanelTransport } from "./panel5-transport.js";
 import { renderPanelUtilities } from "./panel6-utilities.js";
 import { renderPanelRisk } from "./panel7-risk.js";
+import { renderPanelNearbyPostcodes } from "./panel8-nearby-postcodes.js";
 import { renderFooterContext } from "./footer-context.js";
 
 export function renderAllPanels(state) {
@@ -15,6 +16,7 @@ export function renderAllPanels(state) {
   renderPanelTransport(state);
   renderPanelUtilities(state);
   renderPanelRisk(state);
+  renderPanelNearbyPostcodes(state);
   renderFooterContext(state);
 }
 
@@ -26,4 +28,5 @@ export {
   renderPanelTransport,
   renderPanelUtilities,
   renderPanelRisk,
+  renderPanelNearbyPostcodes,
 };

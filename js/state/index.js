@@ -20,6 +20,7 @@ export const state = {
     broadband: {},
     flood: {},
     radon: {},
+    nearbyPostcodes: {},
   },
 };
 
@@ -41,6 +42,7 @@ export function resetState() {
     broadband: {},
     flood: {},
     radon: {},
+    nearbyPostcodes: {},
   };
 }
 

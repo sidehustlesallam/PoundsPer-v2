@@ -9,6 +9,7 @@ import {
   getBroadband,
   getFlood,
   getRadon,
+  getNearbyPostcodes,
   getGeo,
   getAddress,
 } from "./js/api/index.js";
@@ -25,6 +26,7 @@ import {
   normaliseBroadbandResponse,
   normaliseFloodResponse,
   normaliseRadonResponse,
+  normaliseNearbyPostcodesResponse,
 } from "./js/normalisers/index.js";
 import {
   state,
@@ -169,6 +171,16 @@ async function runResolveFromDeviceLocation() {
   }
 }
 
+async function runResolveForPostcode(postcode) {
+  const clean = String(postcode || "").trim();
+  if (!clean) return;
+  const searchInput = $("search-input");
+  if (searchInput) searchInput.value = clean;
+  const uprnInput = $("uprn-input");
+  if (uprnInput) uprnInput.value = "";
+  await runResolve();
+}
+
 async function loadDatasetForSelection(sel) {
   resetState();
   setSelection(sel);
@@ -194,6 +206,7 @@ async function loadDatasetForSelection(sel) {
     { key: "broadband", run: () => getBroadband(postcode) },
     { key: "flood", run: () => getFlood(postcode) },
     { key: "radon", run: () => getRadon(postcode) },
+    { key: "nearbyPostcodes", run: () => getNearbyPostcodes(lat, lon) },
   ];
 
   const settled = await Promise.allSettled(tasks.map((t) => t.run()));
@@ -243,6 +256,16 @@ async function loadDatasetForSelection(sel) {
     setError("market", e.message);
   }
 
+  try {
+    state.normalised.nearbyPostcodes = normaliseNearbyPostcodesResponse(
+      state.raw.nearbyPostcodes || {},
+      sel.postcodeNormalized || sel.postcode || ""
+    );
+  } catch (e) {
+    setError("nearbyPostcodes", e.message);
+    state.normalised.nearbyPostcodes = normaliseNearbyPostcodesResponse({}, "");
+  }
+
   // Secondary fetches: EPC certificate + address (prefer row chosen in /resolve)
   const lmkForCert =
     safeSelString(sel.lmkKey) ||
@@ -290,6 +313,9 @@ async function loadDatasetForSelection(sel) {
   if (state.errors.flood || state.errors.radon) {
     setError("risk", state.errors.flood || state.errors.radon);
   }
+  if (state.errors.nearbyPostcodes) {
+    setError("nearbyPostcodes", state.errors.nearbyPostcodes);
+  }
 
   setLoading(false);
   renderAllPanels(state);
@@ -319,6 +345,14 @@ function init() {
     if (ev.key === "Enter") runResolve();
   });
   $("address-select")?.addEventListener("change", onAddressChange);
+  document.addEventListener("click", (ev) => {
+    const target = ev.target;
+    if (!(target instanceof Element)) return;
+    const chip = target.closest("[data-nearby-postcode]");
+    if (!chip) return;
+    const postcode = chip.getAttribute("data-nearby-postcode") || "";
+    runResolveForPostcode(postcode);
+  });
 
   renderAllPanels(state);
 }

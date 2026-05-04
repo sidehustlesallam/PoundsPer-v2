@@ -7,4 +7,5 @@ export * from "./transport.js";
 export * from "./broadband.js";
 export * from "./flood.js";
 export * from "./radon.js";
+export * from "./nearby-postcodes.js";
 export { getGeo, getAddress } from "./geo.js";
